@@ -11,6 +11,7 @@ ALTER PROCEDURE [dbo].[N88_Site_InsertWithSiteURL]
 	@CurrentSiteId		TINYINT,
 	@SecretAccessKey	VARCHAR(200),
 	@SiteKey			VARCHAR(50),
+	@IsLicenseeSite		BIT = 0,
 	@LogDate			DATETIME,
 	@LoginIP			VARCHAR(30)		= '',
 	@Language			VARCHAR(20)		= 'en-us',
@@ -76,6 +77,7 @@ BEGIN
 		SiteName,
 		Description,
 		IsActive,
+		IsLicenseeSite,
 		Environment,
 		SecretAccessKey,
 		SiteKey)
@@ -83,6 +85,7 @@ BEGIN
 		@SiteName,
 		@Description,
 		@IsActive,
+		@IsLicenseeSite,
 		@Environment,
 		@SecretAccessKey,
 		@SiteKey)
@@ -184,6 +187,7 @@ BEGIN
 			@Description		AS '@d',
 			@Environment		AS '@e',
 			@IsActive			AS '@i',
+			@IsLicenseeSite		AS '@ls',
 			@SecretAccessKey	AS '@sak',
 			@SiteKey			AS '@sk',
 			(

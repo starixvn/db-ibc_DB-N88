@@ -25,6 +25,7 @@ BEGIN
 		 , su.IsDefault
 		 , s.SiteId			AS Id
 		 , s.SiteName		AS [Name]
+		 , s.IsLicenseeSite
 		 , s.Description
 		 , s.IsActive		AS SiteIsActive
 		 , s.Environment	AS SiteEnvironment

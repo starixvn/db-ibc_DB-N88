@@ -22,6 +22,7 @@ BEGIN
 		,s.SiteName
 		,s.Description
 		,s.IsActive
+		,s.IsLicenseeSite
 		,s.Environment
 		,COUNT(us.UserId) AS NumOfUser
 	FROM 
@@ -33,6 +34,7 @@ BEGIN
 	GROUP BY 
 		s.SiteId
 		,s.SiteName
+		,s.IsLicenseeSite
 		,s.Description
 		,s.IsActive
 		,s.Environment

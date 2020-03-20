@@ -20,6 +20,7 @@ BEGIN
 	SELECT 
 		SiteId,
 		SiteName,
+		IsLicenseeSite,
 		Description,
 		IsActive,
 		Environment

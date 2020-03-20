@@ -237,6 +237,8 @@ BEGIN
 	END
 
 	SELECT u.UserId
+		,u.IsLicenseeUser
+		,u.SourceSiteId
 		,c.username
 		,g.GroupId
 		,g.GroupName
