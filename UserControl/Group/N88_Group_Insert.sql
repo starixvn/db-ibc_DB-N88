@@ -35,6 +35,8 @@ AS
 					<row item="GroupName" alias="g" />
 					<row item="Description" alias="d" />
 					<row item="IsActive" alias="i" />
+					<row item="IsLicenseeGroup" alias="il" />
+					<row item="SiteId" alias="si" />
 				</root>
 */
 
@@ -105,6 +107,8 @@ BEGIN
 				,@GroupName AS '@g'
 				,@Description AS '@d'
 				,@IsActive AS '@i'
+				,@IsLicenseeGroup AS '@il'
+				,@SiteId AS '@si'
 			FOR XML PATH('r')
 				,TYPE
 			)

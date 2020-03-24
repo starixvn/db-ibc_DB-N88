@@ -25,7 +25,7 @@ AS
 		- @Username: Username search text
 		- @GroupId: User group ID (0: All groups, Others: specific group)
 		- @SiteId: Site ID (0: No site, -9999: All sites, Others: specific site)
-		- @Status: Status (0: All, 1: Active, 2: Inactive, 3: Closed)
+		- @Status: Status (0: All, 1: Active, 2: Inactive)
 */
 
 BEGIN
@@ -42,20 +42,13 @@ BEGIN
 	DECLARE @Users TABLE (
 		UserId INT
 		,Username NVARCHAR(50)
-		,Closed BIT
 		)
 
 	INSERT INTO @Users
 	SELECT u.UserId
 		,u.username
-		,u.closed
 	FROM dbo.N88_Users AS u WITH (NOLOCK)
-	WHERE @GroupId = 0 OR u.GroupId = @GroupId
-
-	DELETE @Users
-	WHERE username NOT LIKE '%' + @Username + '%'
-		OR (@Status IN (1, 2) AND closed <> 0)
-		OR (@Status = 3 AND closed <> 1 )
+	WHERE (@GroupId = 0 OR u.GroupId = @GroupId ) AND (@Username IS NULL OR @Username = '' OR u.Username LIKE '%' + @Username + '%')
 
 	DECLARE @UserSite TABLE (
 		UserId INT
@@ -136,7 +129,6 @@ BEGIN
 	DECLARE @UserSiteStatus TABLE (
 		UserId INT
 		,SiteId TINYINT
-		,Closed BIT
 		,RowNum INT
 		)
 
@@ -145,15 +137,12 @@ BEGIN
 		INSERT INTO @UserSiteStatus
 		SELECT TOP (@PageSize) tmp.UserId
 			,tmp.SiteId
-			,tmp.closed
 			,tmp.RowNum
 		FROM (
 			SELECT DISTINCT u.UserId
 				,us.SiteId
-				,u.closed
 				,ROW_NUMBER() OVER (
-					ORDER BY u.closed ASC
-						,us.IsActive DESC
+					ORDER BY us.IsActive DESC
 						,us.[Level] DESC
 						,u.username ASC
 					) AS RowNum
@@ -181,15 +170,12 @@ BEGIN
 		INSERT INTO @UserSiteStatus
 		SELECT TOP (@PageSize) tmp.UserId
 			,tmp.SiteId
-			,tmp.closed
 			,tmp.RowNum
 		FROM (
 			SELECT DISTINCT u.UserId
 				,us.SiteId
-				,u.closed
 				,ROW_NUMBER() OVER (
-					ORDER BY u.closed ASC
-						,us.IsActive DESC
+					ORDER BY us.IsActive DESC
 						,us.[Level] DESC
 						,u.username ASC
 					) AS RowNum
@@ -223,14 +209,11 @@ BEGIN
 		,s.SiteName
 		,us.[Level]
 		,CASE 
-			WHEN tmp.Closed = 0
-				AND us.IsActive = 1
+			WHEN us.IsActive = 1
 				THEN 1
-			WHEN tmp.Closed = 0
-				AND us.IsActive = 0
+			WHEN us.IsActive = 0
 				THEN 2
-			WHEN tmp.Closed = 1
-				THEN 3
+			
 			END AS [Status]
 		,u.firstname
 		,u.lastname

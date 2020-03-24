@@ -39,7 +39,6 @@ BEGIN
 		LEFT JOIN dbo.N88_Users AS ci1 WITH (NOLOCK) ON u.CreatedBy = ci1.UserId
 		LEFT JOIN dbo.N88_Users AS ci2 WITH (NOLOCK) ON u.ModifiedBy = ci2.UserId
 	WHERE u.username = @Username
-		AND u.closed = 0
 		AND (
 			(
 				@IsLicenseeSite = 1

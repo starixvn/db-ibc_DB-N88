@@ -44,7 +44,6 @@ BEGIN
 			,c.firstname
 			,c.lastname
 			,c.username
-			,c.closed
 			,ROW_NUMBER() OVER (ORDER BY c.username) AS num
 		FROM dbo.N88_Users AS c WITH (NOLOCK)
 		WHERE c.username LIKE '%' + @Username + '%'

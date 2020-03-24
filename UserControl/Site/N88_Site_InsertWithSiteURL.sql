@@ -187,7 +187,7 @@ BEGIN
 			@Description		AS '@d',
 			@Environment		AS '@e',
 			@IsActive			AS '@i',
-			@IsLicenseeSite		AS '@ls',
+			@IsLicenseeSite		AS '@il',
 			@SecretAccessKey	AS '@sak',
 			@SiteKey			AS '@sk',
 			(

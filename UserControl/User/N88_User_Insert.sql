@@ -99,7 +99,6 @@ BEGIN
 		,CreatedDate
 		,ModifiedBy
 		,ModifiedDate
-		,Closed
 		,IsLicenseeUser
 		,SourceSiteId
 		)
@@ -115,7 +114,6 @@ BEGIN
 		,@LogDate
 		,@CurrentUserId
 		,@LogDate
-		,0
 		,@IsLicenseeUser
 		,@SiteId
 		)
@@ -130,6 +128,7 @@ BEGIN
 				,@LastName AS '@l'
 				,@Email AS '@e'
 				,@SiteId AS '@si'
+				,@IsLicenseeUser AS '@il'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 			INNER JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
 			WHERE u.userid = @UserId

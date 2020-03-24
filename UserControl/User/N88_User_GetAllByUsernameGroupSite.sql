@@ -24,7 +24,7 @@ AS
 		- @Username: Username search text
 		- @GroupId: User group ID (0: All groups, Others: specific group)
 		- @Site : '<ROOT><Site SiteId="4"></Site></ROOT>'
-		- @Status: Status (0: All, 1: Active, 2: Inactive, 3: Closed)
+		- @Status: Status (0: All, 1: Active, 2: Inactive)
 */
 
 BEGIN
@@ -50,13 +50,11 @@ BEGIN
 	DECLARE @Users TABLE (
 		UserId INT
 		,Username NVARCHAR(50)
-		,Closed BIT
 		)
 
 	INSERT INTO @Users
 	SELECT u.UserId
 		,u.username
-		,u.closed
 	FROM dbo.N88_Users AS u WITH (NOLOCK)
 	WHERE (
 			@GroupId = 0
@@ -64,28 +62,14 @@ BEGIN
 				@GroupId <> 0
 				AND u.GroupId = @GroupId
 				)
-			)
+			) 
 		AND (
-			(
-				@ExcludeLicenseeUser = 1
-				AND ISNULL(u.IsLicenseeUser, 0) = 0
+				@Username IS NULL
+				OR @Username = ''
+				OR u.Username LIKE '%' + @Username + '%'
 				)
-			OR (
-				@ExcludeLicenseeUser = 0
-				AND ISNULL(u.IsLicenseeUser, 0) = 1
-				)
-			)
 
-	DELETE @Users
-	WHERE username NOT LIKE '%' + @Username + '%'
-		OR (
-			@Status IN (1, 2)
-			AND closed <> 0
-			)
-		OR (
-			@Status = 3
-			AND closed <> 1
-			)
+
 
 	DECLARE @UserSite TABLE (
 		UserId INT
@@ -124,7 +108,7 @@ BEGIN
 
 	SELECT @LastRec = @PageIndex * @PageSize
 
-	IF @Status IN (0, 3)
+	IF @Status = 0
 	BEGIN
 		SET @TotalRows = (
 				SELECT DISTINCT COUNT(1)
@@ -163,24 +147,20 @@ BEGIN
 	DECLARE @UserSiteStatus TABLE (
 		UserId INT
 		,SiteId TINYINT
-		,Closed BIT
 		,RowNum INT
 		)
 
-	IF @Status IN (0, 3)
+	IF @Status = 0
 	BEGIN
 		INSERT INTO @UserSiteStatus
 		SELECT TOP (@PageSize) TEMP.UserId
 			,TEMP.SiteId
-			,TEMP.closed
 			,TEMP.RowNum
 		FROM (
 			SELECT DISTINCT u.UserId
 				,us.SiteId
-				,u.closed
 				,ROW_NUMBER() OVER (
-					ORDER BY u.closed ASC
-						,us.IsActive DESC
+					ORDER BY us.IsActive DESC
 						,u.username
 						,s.SiteName
 						,us.[Level] DESC
@@ -206,15 +186,12 @@ BEGIN
 		INSERT INTO @UserSiteStatus
 		SELECT TOP (@PageSize) TEMP.UserId
 			,TEMP.SiteId
-			,TEMP.closed
 			,TEMP.RowNum
 		FROM (
 			SELECT DISTINCT u.UserId
 				,us.SiteId
-				,u.closed
 				,ROW_NUMBER() OVER (
-					ORDER BY u.closed ASC
-						,us.IsActive DESC
+					ORDER BY us.IsActive DESC
 						,u.username
 						,s.SiteName
 						,us.[Level] DESC
@@ -239,21 +216,20 @@ BEGIN
 	SELECT u.UserId
 		,u.IsLicenseeUser
 		,u.SourceSiteId
-		,c.username
+		,u.username
 		,g.GroupId
 		,g.GroupName
 		,us.SiteId
 		,s.SiteName
 		,us.[Level]
 		,CASE 
-			WHEN tmp.Closed = 0 AND us.IsActive = 1 THEN 1
-			WHEN tmp.Closed = 0 AND us.IsActive = 0 THEN 2
-			WHEN tmp.Closed = 1 THEN 3
+			WHEN us.IsActive = 1 THEN 1
+			WHEN us.IsActive = 0 THEN 2
 		END AS STATUS
-		,c.firstname
-		,c.lastname
-		,c.email
-		,c.userpwd
+		,u.firstname
+		,u.lastname
+		,u.email
+		,u.userpwd
 		,us.LastLoginDate
 		,u.CreatedDate
 		,u.ModifiedDate
@@ -270,7 +246,6 @@ BEGIN
 		,us.ModifiedDate AS ModifiedDateUserSite
 	FROM @UserSiteStatus AS tmp
 		INNER JOIN dbo.N88_Users AS u WITH (NOLOCK) ON tmp.UserId = u.UserId
-		INNER JOIN dbo.N88_Users AS c WITH (NOLOCK) ON u.UserId = c.UserId
 		LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON g.GroupId = u.GroupId
 		LEFT JOIN dbo.N88_Users AS c1 WITH (NOLOCK) ON u.CreatedBy = c1.UserId
 		LEFT JOIN dbo.N88_Users AS c2 WITH (NOLOCK) ON u.ModifiedBy = c2.UserId
