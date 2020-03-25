@@ -55,7 +55,7 @@ BEGIN
 		LEFT JOIN dbo.N88_Users AS ci WITH (NOLOCK) ON g.CreatedBy = ci.UserId
 		LEFT JOIN dbo.N88_Users AS ci1 WITH (NOLOCK) ON g.ModifiedBy = ci1.UserId
 	WHERE (@IsActive IS NULL OR g.IsActive = @IsActive )
-		AND (@GroupName IS NULL OR g.GroupName LIKE '%' + @GroupName + '%')
+		AND (@GroupName IS NULL OR g.GroupName LIKE '%' + REPLACE(REPLACE(@GroupName, '_', '\_'), '%', '\%') + '%')
 		AND (( @isLicenseeGroup = 1 AND ISNULL(g.SourceSiteId,0) = ISNULL(@SiteId, 0))
 			OR (@isLicenseeGroup = 0 AND ISNULL(g.IsLicenseeGroup, 0) = @isLicenseeGroup ))
 END

@@ -56,7 +56,7 @@ BEGIN
 	IF EXISTS (
 			SELECT 1
 			FROM dbo.N88_Groups WITH (NOLOCK)
-			WHERE GroupName = @GroupName
+			WHERE GroupName = LTRIM(@GroupName)
 				AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
 				AND ISNULL(SourceSiteId,0) = ISNULL(@SiteId,0)
 			)
@@ -69,7 +69,7 @@ BEGIN
 
 	-- Insert new group 
 	INSERT INTO dbo.N88_Groups (
-		GroupName
+		LTRIM(GroupName)
 		,Description
 		,IsActive
 		,CreatedBy

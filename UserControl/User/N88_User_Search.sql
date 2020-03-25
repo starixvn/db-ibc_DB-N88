@@ -48,7 +48,7 @@ BEGIN
 	SELECT u.UserId
 		,u.username
 	FROM dbo.N88_Users AS u WITH (NOLOCK)
-	WHERE (@GroupId = 0 OR u.GroupId = @GroupId ) AND (@Username IS NULL OR @Username = '' OR u.Username LIKE '%' + @Username + '%')
+	WHERE (@GroupId = 0 OR u.GroupId = @GroupId ) AND (@Username IS NULL OR @Username = '' OR u.Username LIKE '%' + REPLACE(REPLACE(@Username, '_', '\_'), '%', '\%') + '%')
 
 	DECLARE @UserSite TABLE (
 		UserId INT
