@@ -63,9 +63,19 @@ BEGIN
 	IF EXISTS (
 			SELECT 1
 			FROM dbo.N88_Groups WITH (NOLOCK)
-			WHERE GroupName = @GroupName
-				AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
-				AND ISNULL(SourceSiteId, 0) = ISNULL(@SiteId, 0)
+			WHERE (
+					@IsLicenseeGroup = 1
+					AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
+					AND GroupName = @GroupName
+					AND ISNULL(SourceSiteId, 0) = @SiteId
+					AND GroupId <> @GroupId
+					)
+				OR (
+					@IsLicenseeGroup = 0
+					AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
+					AND GroupName = @GroupName
+					AND GroupId <> @GroupId
+					)
 			)
 	BEGIN
 		SELECT @ErrCode = 1
