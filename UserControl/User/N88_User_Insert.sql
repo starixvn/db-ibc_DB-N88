@@ -59,7 +59,7 @@ BEGIN
 	IF EXISTS (
 			SELECT 1
 			FROM dbo.N88_Users u WITH (NOLOCK)
-			INNER JOIN dbo.N88_UserSite us WITH (NOLOCK) ON u.UserId = us.UserId
+			LEFT JOIN dbo.N88_UserSite us WITH (NOLOCK) ON u.UserId = us.UserId
 			WHERE Username = @Username
 				AND (
 					(

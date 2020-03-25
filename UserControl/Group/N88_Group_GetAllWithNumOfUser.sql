@@ -22,6 +22,8 @@ BEGIN
 
 	SELECT g.GroupId
 		,g.GroupName
+		,g.IsLicenseeGroup
+		,g.SourceSiteId
 		,g.Description
 		,g.IsActive
 		,g.CreatedDate
@@ -31,13 +33,16 @@ BEGIN
 			FROM (
 				SELECT DISTINCT u.UserId
 				FROM dbo.N88_Users AS u WITH (NOLOCK)
-					LEFT JOIN dbo.N88_UserSite AS us WITH (NOLOCK) ON u.UserId = us.UserId
-					LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON us.SiteId = s.SiteId
-				WHERE ( @Environment = 'UAT' OR s.Environment = @Environment )
+				LEFT JOIN dbo.N88_UserSite AS us WITH (NOLOCK) ON u.UserId = us.UserId
+				LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON us.SiteId = s.SiteId
+				WHERE (
+						@Environment = 'UAT'
+						OR s.Environment = @Environment
+						)
 					AND u.GroupId = g.GroupId
-
+				
 				UNION
-
+				
 				SELECT DISTINCT u.UserId
 				FROM dbo.N88_Users AS u WITH (NOLOCK)
 				WHERE u.UserId NOT IN (
@@ -52,11 +57,28 @@ BEGIN
 		,g.ModifiedBy AS ModifierId
 		,ci1.Username AS ModifierUsername
 	FROM dbo.N88_Groups AS g WITH (NOLOCK)
-		LEFT JOIN dbo.N88_Users AS ci WITH (NOLOCK) ON g.CreatedBy = ci.UserId
-		LEFT JOIN dbo.N88_Users AS ci1 WITH (NOLOCK) ON g.ModifiedBy = ci1.UserId
-	WHERE (@IsActive IS NULL OR g.IsActive = @IsActive )
-		AND (@GroupName IS NULL OR g.GroupName LIKE '%' + REPLACE(REPLACE(@GroupName, '_', '\_'), '%', '\%') + '%')
-		AND (( @isLicenseeGroup = 1 AND ISNULL(g.SourceSiteId,0) = ISNULL(@SiteId, 0))
-			OR (@isLicenseeGroup = 0 AND ISNULL(g.IsLicenseeGroup, 0) = @isLicenseeGroup ))
+	LEFT JOIN dbo.N88_Users AS ci WITH (NOLOCK) ON g.CreatedBy = ci.UserId
+	LEFT JOIN dbo.N88_Users AS ci1 WITH (NOLOCK) ON g.ModifiedBy = ci1.UserId
+	WHERE (
+			@IsActive IS NULL
+			OR g.IsActive = @IsActive
+			)
+		AND (
+			@GroupName IS NULL
+			OR g.GroupName LIKE '%' + REPLACE(REPLACE(@GroupName, '_', '\_'), '%', '\%') + '%'
+			)
+		AND (
+			(
+				@isLicenseeGroup = 1
+				AND (
+					@SiteId IS NULL
+					OR ISNULL(g.SourceSiteId, 0) = ISNULL(@SiteId, 0)
+					)
+				)
+			OR (
+				@isLicenseeGroup = 0
+				AND ISNULL(g.IsLicenseeGroup, 0) = @isLicenseeGroup
+				)
+			)
 END
 GO

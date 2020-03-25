@@ -2,7 +2,7 @@
 
 ALTER PROCEDURE [dbo].[N88_Group_GetAll]
 	@IsActive			BIT		= NULL,
-	@IsLicenseeGroup	BIT		= 0,
+	@IsLicenseeGroup	BIT		= NULL,
 	@SiteId				TINYINT	= NULL
 AS
 
@@ -31,8 +31,20 @@ BEGIN
 	FROM dbo.N88_Groups AS g WITH (NOLOCK)
 		LEFT JOIN dbo.N88_Users AS ci WITH (NOLOCK) ON g.CreatedBy = ci.UserId
 		LEFT JOIN dbo.N88_Users AS ci1 WITH (NOLOCK) ON g.ModifiedBy = ci1.UserId
-	WHERE (@IsActive IS NULL OR g.IsActive = @IsActive)
-		AND ((@IsLicenseeGroup = 1 AND g.SourceSiteId = @SiteId)
-			OR (@IsLicenseeGroup = 0 AND ISNULL(g.IsLicenseeGroup, 0) = @isLicenseeGroup))
+	WHERE (
+			@IsActive IS NULL
+			OR g.IsActive = @IsActive
+			)
+		AND (
+			@IsLicenseeGroup IS NULL
+			OR (
+				@IsLicenseeGroup = 1
+				AND g.SourceSiteId = @SiteId
+				)
+			OR (
+				@IsLicenseeGroup = 0
+				AND ISNULL(g.IsLicenseeGroup, 0) = @isLicenseeGroup
+				)
+			)
 END
 GO
