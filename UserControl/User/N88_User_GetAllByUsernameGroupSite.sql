@@ -66,7 +66,7 @@ BEGIN
 		AND (
 				@Username IS NULL
 				OR @Username = ''
-				OR u.Username LIKE '%' + REPLACE(REPLACE(@Username, '_', '\_'), '%', '\%') + '%'
+				OR u.Username LIKE '%' + REPLACE(REPLACE(@Username, '_', '\_'), '%', '\%') + '%'  ESCAPE '\'
 				)
 
 

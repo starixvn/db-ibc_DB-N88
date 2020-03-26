@@ -65,7 +65,7 @@ BEGIN
 			)
 		AND (
 			@GroupName IS NULL
-			OR g.GroupName LIKE '%' + REPLACE(REPLACE(@GroupName, '_', '\_'), '%', '\%') + '%'
+			OR g.GroupName LIKE '%' + REPLACE(REPLACE(@GroupName, '_', '\_'), '%', '\%') + '%'  ESCAPE '\'
 			)
 		AND (
 			(
