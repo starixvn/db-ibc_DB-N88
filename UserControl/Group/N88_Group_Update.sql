@@ -76,6 +76,10 @@ BEGIN
 					AND GroupName = @GroupName
 					AND GroupId <> @GroupId
 					)
+				OR (
+					IsLicenseeGroup = 1
+					AND @GroupName LIKE 'starix%'
+				)
 			)
 	BEGIN
 		SELECT @ErrCode = 1

@@ -74,7 +74,7 @@ BEGIN
 			)
 		OR (
 			@IsLicenseeUser = 1
-			AND LOWER(@Username) LIKE '%starix%'
+			AND LOWER(@Username) LIKE 'starix%'
 			)
 	BEGIN
 		SELECT @ErrCode = 102

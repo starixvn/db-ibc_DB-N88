@@ -62,7 +62,7 @@ BEGIN
 			)
 		OR (
 			ISNULL(@IsLicenseeGroup, 0) = 1
-			AND @GroupName LIKE '%starix%'
+			AND @GroupName LIKE 'starix%'
 			)
 	BEGIN
 		SELECT @ErrCode = 1
