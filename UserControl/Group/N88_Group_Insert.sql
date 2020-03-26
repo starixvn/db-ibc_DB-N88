@@ -44,32 +44,36 @@ BEGIN
 	SET NOCOUNT ON
 
 	-- For write log
-	DECLARE @startRun	DATETIME
-		,@endRun		DATETIME
-		,@duration		INT
-		,@logSPData		NVARCHAR(MAX)
-		,@logSPDataOld	NVARCHAR(MAX)
-		,@xml			XML
+	DECLARE @startRun DATETIME
+		,@endRun DATETIME
+		,@duration INT
+		,@logSPData NVARCHAR(MAX)
+		,@logSPDataOld NVARCHAR(MAX)
+		,@xml XML
 
 	SET @startRun = GETDATE()
 
 	IF EXISTS (
 			SELECT 1
 			FROM dbo.N88_Groups WITH (NOLOCK)
-			WHERE GroupName = LTRIM(@GroupName)
+			WHERE GroupName = @GroupName
 				AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
-				AND ISNULL(SourceSiteId,0) = ISNULL(@SiteId,0)
+				AND ISNULL(SourceSiteId, 0) = ISNULL(@SiteId, 0)
+			)
+		OR (
+			ISNULL(@IsLicenseeGroup, 0) = 1
+			AND @GroupName LIKE '%starix%'
 			)
 	BEGIN
 		SELECT @ErrCode = 1
-			,@ErrMsg = 'The group name existed.'
+			,@ErrMsg = 'The group name existed or Invalid.'
 
 		RETURN
 	END
 
 	-- Insert new group 
 	INSERT INTO dbo.N88_Groups (
-		LTRIM(GroupName)
+		GroupName
 		,Description
 		,IsActive
 		,CreatedBy
@@ -80,7 +84,7 @@ BEGIN
 		,SourceSiteId
 		)
 	VALUES (
-		LTRIM(@GroupName)
+		@GroupName
 		,@Description
 		,@IsActive
 		,@CreatedBy
@@ -104,11 +108,11 @@ BEGIN
 	-- Write log
 	SET @xml = (
 			SELECT @GroupId AS '@gi'
-				,LTRIM(@GroupName) AS '@g'
+				,@GroupName AS '@g'
 				,@Description AS '@d'
 				,@IsActive AS '@i'
 				,@IsLicenseeGroup AS '@il'
-				,@SiteId AS '@si'
+				,ISNULL(@SiteId, 0) AS '@si'
 			FOR XML PATH('r')
 				,TYPE
 			)
@@ -116,12 +120,11 @@ BEGIN
 	SET @endRun = GETDATE()
 	SET @duration = DATEDIFF(MILLISECOND, @startRun, @endRun)
 
-	EXEC dbo.N88_RunSP_WriteLog
-		@UserId = @CurrentUserId
+	EXEC dbo.N88_RunSP_WriteLog @UserId = @CurrentUserId
 		,@SPName = 'N88_Group_Insert'
 		,@ObjectId = @GroupId
 		,@ObjectTypeId = 2
-		,@Language = @Language		-- Object type : Group
+		,@Language = @Language -- Object type : Group
 		,@SiteID = @CurrentSiteId
 		,@IP = @LoginIP
 		,@Date = @LogDate
