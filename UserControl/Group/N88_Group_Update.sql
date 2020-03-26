@@ -66,14 +66,14 @@ BEGIN
 			WHERE (
 					@IsLicenseeGroup = 1
 					AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
-					AND GroupName = @GroupName
+					AND GroupName = LTRIM(@GroupName)
 					AND ISNULL(SourceSiteId, 0) = @SiteId
 					AND GroupId <> @GroupId
 					)
 				OR (
 					@IsLicenseeGroup = 0
 					AND ISNULL(IsLicenseeGroup, 0) = @IsLicenseeGroup
-					AND GroupName = @GroupName
+					AND GroupName = LTRIM(@GroupName)
 					AND GroupId <> @GroupId
 					)
 			)
@@ -86,7 +86,7 @@ BEGIN
 
 	-- Update group information
 	UPDATE dbo.N88_Groups WITH (ROWLOCK, UPDLOCK)
-	SET GroupName = @GroupName
+	SET GroupName = LTRIM(@GroupName)
 		,Description = @Description
 		,IsActive = @IsActive
 		,ModifiedBy = @ModifiedBy
@@ -104,7 +104,7 @@ BEGIN
 	-- Write log
 	SET @xml = (
 			SELECT @GroupId AS '@gi'
-				,@GroupName AS '@g'
+				,LTRIM(@GroupName) AS '@g'
 				,@Description AS '@d'
 				,@IsActive AS '@i'
 			FOR XML PATH('r')

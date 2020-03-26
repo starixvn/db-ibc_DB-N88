@@ -80,7 +80,7 @@ BEGIN
 		,SourceSiteId
 		)
 	VALUES (
-		@GroupName
+		LTRIM(@GroupName)
 		,@Description
 		,@IsActive
 		,@CreatedBy
@@ -104,7 +104,7 @@ BEGIN
 	-- Write log
 	SET @xml = (
 			SELECT @GroupId AS '@gi'
-				,@GroupName AS '@g'
+				,LTRIM(@GroupName) AS '@g'
 				,@Description AS '@d'
 				,@IsActive AS '@i'
 				,@IsLicenseeGroup AS '@il'
