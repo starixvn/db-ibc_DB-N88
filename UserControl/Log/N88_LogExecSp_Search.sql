@@ -4,7 +4,7 @@ ALTER PROCEDURE [dbo].[N88_LogExecSp_Search]
 	@Username		NVARCHAR(50)	= ''
 	,@Name			NVARCHAR(50)	= ''
 	,@FilterType	INT
-	,@SiteId	SMALLINT				= -1
+	,@SiteId	TINYINT				= NULL
 	,@From			DATETIME
 	,@To			DATETIME
 	,@PageIndex		INT
@@ -46,7 +46,7 @@ BEGIN
 				AND u.username LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId = -1 OR lg.siteID = @SiteId)
+				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 		)
 
 		SET @TotalRows += (
@@ -61,7 +61,7 @@ BEGIN
 				AND lg.SPName LIKE 'Task%'
 				AND u.username LIKE '%' + @Name + '%'
 				AND (@Username LIKE 'sys%' OR @Username = '')
-				AND (@SiteId = -1 OR lg.siteID = @SiteId)
+				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 		)
 
 		-- gets data
@@ -93,7 +93,7 @@ BEGIN
 						AND u.username LIKE '%' + @Name + '%'
 						AND lg.LogDate BETWEEN @From AND @To
 						AND cu1.username LIKE '%' + @Username + '%'
-						AND (@SiteId = -1 OR lg.siteID = @SiteId)
+						AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 					UNION
 					SELECT
 						lg.Id,
@@ -112,7 +112,7 @@ BEGIN
 						AND lg.SPName LIKE 'Task%'
 						AND u.username LIKE '%' + @Name + '%'
 						AND (@Username LIKE 'sys%' OR @Username = '')
-						AND (@SiteId = -1 OR lg.siteID = @SiteId)
+						AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 					) AS SubTemp
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
@@ -134,7 +134,7 @@ BEGIN
 				AND g.GroupName LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId = -1 OR lg.siteID = @SiteId)
+				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 		)
 
 		-- gets data
@@ -158,7 +158,7 @@ BEGIN
 					AND g.GroupName LIKE '%' + @Name + '%'
 					AND lg.LogDate BETWEEN @From AND @To
 					AND cu1.username LIKE '%' + @Username + '%'
-					AND (@SiteId = -1 OR lg.siteID = @SiteId)
+					AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
 		ORDER BY Temp.num ASC
@@ -179,7 +179,7 @@ BEGIN
 				AND s.SiteName LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId = -1 OR lg.siteID = @SiteId)
+				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 		)
 
 		-- gets data
@@ -203,7 +203,7 @@ BEGIN
 					AND s.SiteName LIKE '%' + @Name + '%'
 					AND lg.LogDate BETWEEN @From AND @To
 					AND cu1.username LIKE '%' + @Username + '%'
-					AND (@SiteId = -1 OR lg.siteID = @SiteId)
+					AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
 		ORDER BY Temp.num ASC
@@ -224,7 +224,7 @@ BEGIN
 				AND f.FunctionName LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId = -1 OR lg.siteID = @SiteId)
+				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 		)
 
 		-- gets data
@@ -248,7 +248,7 @@ BEGIN
 					AND f.FunctionName LIKE '%' + @Name + '%'
 					AND lg.LogDate BETWEEN @From AND @To
 					AND cu1.username LIKE '%' + @Username + '%'
-					AND (@SiteId = -1 OR lg.siteID = @SiteId)
+					AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
 		ORDER BY Temp.num ASC
@@ -269,7 +269,7 @@ BEGIN
 				AND m.MenuItemName LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId = -1 OR lg.siteID = @SiteId)
+				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 		)
 
 		-- gets data
@@ -293,7 +293,7 @@ BEGIN
 					AND m.MenuItemName LIKE '%' + @Name + '%'
 					AND lg.LogDate BETWEEN @From AND @To
 					AND cu1.username LIKE '%' + @Username + '%'
-					AND (@SiteId = -1 OR lg.siteID = @SiteId)
+					AND (@SiteId IS NULL OR lg.siteID = @SiteId)
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
 		ORDER BY Temp.num ASC
