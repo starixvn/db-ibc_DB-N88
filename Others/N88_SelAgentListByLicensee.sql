@@ -1,4 +1,4 @@
-﻿/*<info serverAlias="DBEXT-bodb02" executers="bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
+﻿/*<info serverAlias="DBLIC-bodb_Licensee" executers="bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
 
 ALTER PROCEDURE [dbo].[N88_SelAgentListByLicensee]
 	@LicenseeId	INT
@@ -7,7 +7,7 @@ AS
 /*
 	Created: 20200314@Kos
 	Task: Get agent list by licensee
-	DB: DBEXT.bodb_Licensee
+	DB: DBLIC.bodb_Licensee
 	Original: Lrf_SelCurrencyByLicenseeUser
 
 	Revisions:
@@ -44,4 +44,5 @@ BEGIN
 			ELSE e.Code
 		END
 END
+
 GO
