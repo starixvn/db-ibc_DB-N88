@@ -1,6 +1,6 @@
 ﻿/*<info serverAlias="DBN88LOG-bodb_N88Log" executers="bodbAdminNet,bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
 
-CREATE PROCEDURE [dbo].[N88Admin_LogExecSp_Search]
+CREATE PROCEDURE [dbo].[N88_Admin_LogExecSp_Search]
 	@Username		NVARCHAR(50)	= ''
 	,@Name			NVARCHAR(50)	= ''
 	,@FilterType	INT
@@ -26,7 +26,15 @@ BEGIN
 
 	DECLARE @FirstRec	INT,
 		@LastRec		INT,
-		@N88_User_AssignNewSite INT = 403
+		@N88_User_Insert INT = 100,
+		@N88_User_Update INT = 200,
+		@N88_User_UpdatePassword INT = 3,
+		@N88_User_UpdateSite INT = 404,
+		@N88_User_AssignFunction INT = 304,		
+		@N88_Group_Insert INT = 102,
+		@N88_Group_UpdateStatus INT = 204,
+		@N88_Group_Update INT = 203,
+		@N88_Group_AssignFunction INT = 302
 
 	SELECT @FirstRec = ((@PageIndex - 1) * @PageSize) + 1
 	SELECT @LastRec = ((@PageIndex * @PageSize + 1)) - 1
@@ -46,8 +54,8 @@ BEGIN
 				AND u.username LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
-				AND lg.ActionId <> @N88_User_AssignNewSite
+				AND u.IsLicenseeUser = 1 AND u.SourceSiteId = @SiteId
+				AND lg.ActionId IN (@N88_User_Insert, @N88_User_Update, @N88_User_UpdatePassword, @N88_User_UpdateSite, @N88_User_AssignFunction)
 		)		
 
 		-- gets data
@@ -71,8 +79,8 @@ BEGIN
 				    AND u.username LIKE '%' + @Name + '%'
 				    AND lg.LogDate BETWEEN @From AND @To
 				    AND cu1.username LIKE '%' + @Username + '%'
-				    AND (@SiteId IS NULL OR lg.siteID = @SiteId)		
-				    AND lg.ActionId <> @N88_User_AssignNewSite		
+				    AND u.IsLicenseeUser = 1 AND u.SourceSiteId = @SiteId
+				    AND lg.ActionId IN (@N88_User_Insert, @N88_User_Update, @N88_User_UpdatePassword, @N88_User_UpdateSite, @N88_User_AssignFunction)
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
 		ORDER BY Temp.num ASC
@@ -93,7 +101,8 @@ BEGIN
 				AND g.GroupName LIKE '%' + @Name + '%'
 				AND lg.LogDate BETWEEN @From AND @To
 				AND cu1.username LIKE '%' + @Username + '%'
-				AND (@SiteId IS NULL OR lg.siteID = @SiteId)
+				AND g.IsLicenseeGroup = 1 AND g.SourceSiteId = @SiteId
+				AND lg.ActionId IN (@N88_Group_Insert, @N88_Group_UpdateStatus, @N88_Group_Update, @N88_Group_AssignFunction)
 		)
 
 		-- gets data
@@ -117,7 +126,8 @@ BEGIN
 					AND g.GroupName LIKE '%' + @Name + '%'
 					AND lg.LogDate BETWEEN @From AND @To
 					AND cu1.username LIKE '%' + @Username + '%'
-					AND (@SiteId IS NULL OR lg.siteID = @SiteId)
+					AND g.IsLicenseeGroup = 1 AND g.SourceSiteId = @SiteId
+					AND lg.ActionId IN (@N88_Group_Insert, @N88_Group_UpdateStatus, @N88_Group_Update, @N88_Group_AssignFunction)
 			) AS Temp
 		WHERE Temp.num BETWEEN @FirstRec AND @LastRec
 		ORDER BY Temp.num ASC
