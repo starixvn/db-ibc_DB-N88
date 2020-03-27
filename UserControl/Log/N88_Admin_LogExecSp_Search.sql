@@ -1,4 +1,4 @@
-﻿/*<info serverAlias="DBN88LOG-bodb_N88Log" executers="bodbAdminNet,bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
+﻿/*<info serverAlias="DBN88LOG-bodb_N88Log" executers="bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
 
 CREATE PROCEDURE [dbo].[N88_Admin_LogExecSp_Search]
 	@Username		NVARCHAR(50)	= ''
