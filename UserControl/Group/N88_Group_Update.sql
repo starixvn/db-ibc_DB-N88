@@ -12,7 +12,6 @@ ALTER PROCEDURE [dbo].[N88_Group_Update]
 	,@LogDate		DATETIME
 	,@LoginIP		VARCHAR(30) = ''
 	,@Language		VARCHAR(20) = 'en-us'
-	,@IsLicenseeGroup BIT = 0
 	,@SiteId		TINYINT = NULL
 	,@ErrCode		INT = 0 OUTPUT
 	,@ErrMsg		NVARCHAR(1000) = '' OUTPUT
@@ -77,7 +76,8 @@ BEGIN
 					AND GroupId <> @GroupId
 					)
 				OR (
-					IsLicenseeGroup = 1
+					GroupId = @GroupId
+					AND IsLicenseeGroup = 1
 					AND @GroupName LIKE 'starix%'
 				)
 			)

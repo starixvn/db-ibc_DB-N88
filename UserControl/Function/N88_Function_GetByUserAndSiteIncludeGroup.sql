@@ -30,6 +30,7 @@ BEGIN
 		f.Environment,
 		f.ParentId,			-- parent information
 		f.ParentName,
+		pf.FunctionKey AS ParentKey,
 		f.SiteId,			-- site information
 		s.SiteName
 	FROM
@@ -77,6 +78,7 @@ BEGIN
 			ON A.FunctionID = B.FunctionID
 		) AS uf
 		LEFT JOIN dbo.N88_Functions AS f WITH (NOLOCK) ON uf.FunctionId = f.FunctionId
+		LEFT JOIN dbo.N88_Functions AS pf WITH (NOLOCK) ON f.ParentId IS NOT NULL AND f.ParentId <> 0 AND f.ParentId = pf.FunctionId
 		LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON f.SiteId = s.SiteId
 	WHERE 
 		(@Environment = 'UAT' OR (@Environment != 'UAT' AND f.Environment = @Environment))
