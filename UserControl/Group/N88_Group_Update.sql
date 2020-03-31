@@ -13,6 +13,7 @@ ALTER PROCEDURE [dbo].[N88_Group_Update]
 	,@LoginIP		VARCHAR(30) = ''
 	,@Language		VARCHAR(20) = 'en-us'
 	,@SiteId		TINYINT = NULL
+	,@IsLicenseeGroup BIT = 0
 	,@ErrCode		INT = 0 OUTPUT
 	,@ErrMsg		NVARCHAR(1000) = '' OUTPUT
 AS
