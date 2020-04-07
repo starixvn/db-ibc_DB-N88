@@ -1,0 +1,36 @@
+﻿/*<info serverAlias="DBN88POL-N88_UserControl" executers="bodbAdminNet,bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
+
+ALTER PROCEDURE [dbo].[N88_Site_GetAllSiteUrl]
+	@Environment	VARCHAR(10)		-- UAT, LIVE
+AS
+
+/*
+	Created: 20200314@Kos
+	Task: Get all site URLs
+	DB: DBN88POL.N88_UserControl
+
+	Revisions:
+		- 20200314@Kos: Created [RedmineID: #129873]
+*/
+
+BEGIN
+	SET NOCOUNT ON
+
+	SELECT 
+		su.SiteURLId, 
+		su.URL, 
+		su.Environment, 
+		su.IsActive, 
+		su.IsDefault, 
+		s.SiteId		AS Id, 
+		s.SiteName		AS [Name], 
+		s.IsLicenseeSite,
+		s.Description, 
+		s.IsActive		AS SiteIsActive, 
+		s.Environment	AS SiteEnvironment
+	FROM
+		dbo.N88_SiteURL su WITH (NOLOCK)
+		INNER JOIN dbo.N88_Sites s WITH (NOLOCK) ON su.SiteId = s.SiteId
+	WHERE su.Environment = @Environment
+END
+GO
