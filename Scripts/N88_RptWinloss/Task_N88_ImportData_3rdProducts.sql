@@ -47,10 +47,14 @@ BEGIN
 				CAST(DATEADD(hh, -4, transtime) AS DATE) transdate , 
 				CAST(DATEADD(hh, 8, transtime) AS DATE) transdateGMT, 
 				CAST(DATEADD(hh, -4, SettledTime) AS DATE) WinlostDate, 
-				CustId, UserName, GameType, CurrencyId, stake, 
-				winlostamount, transid , l.LicenseeID, TicketStatus, 
+				CustId, UserName, GameType, CurrencyId, 
+				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN Stake/1000 ELSE Stake END Stake, 
+				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN winlostamount/1000 ELSE winlostamount END winlostamount,
+				transid , l.LicenseeID, TicketStatus, 
 				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone
 			FROM bodb_3rdProduct.dbo.TpBetRecord td 
+				INNER JOIN bodb02.dbo.Exchange exCode
+					ON td.CurrencyId = exCode.exchangeid
 				INNER JOIN bodb_3rdProduct.dbo.ServerInfo s
 					ON td.SiteId = s.SiteId
 				INNER JOIN bodb_licensee.dbo.Licensees l
