@@ -1,14 +1,14 @@
-USE bodb_LicenseeReport
+/*<info serverAlias="DBN88-bodb_N88" isFunction="0" isNested=""></info>*/
+USE bodb_N88
 
-GO
+GO 
 
-/*<info serverAlias="DBLIC-bodb_LicenseeReport" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
 CREATE PROCEDURE [dbo].[Task_N88_ImportData_Job]
 AS
 
 /*
 	Created: 20200506@Sol
-	DB: DBLIC-bodb_LicenseeReport
+	DB: DBN88-bodb_N88
 	Task: Job - Import data for N88_RptWinloss
 
 	Revisions:

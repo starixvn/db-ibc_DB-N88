@@ -1,10 +1,11 @@
+/*<info serverAlias="DBN88-bodb_N88" isFunction="0" isNested=""></info>*/
 /*	
 	Created: 20200511@Sol
 	Task: Get match that settled without ticket - [Redmine:#133254]
-	DB: DBLIC/bodb_LicenseeReport
+	DB: DBN88/bodb_N88
 */
 
-USE bodb_LicenseeReport;
+USE bodb_N88;
 
 GO 
 
@@ -22,7 +23,8 @@ CREATE TABLE [dbo].N88_RptWinloss(
 	WinlostDateGMT	DATE NOT NULL,
 	[TimeZone]	SMALLINT NOT NULL,
 	TransDate DATE NOT NULL,
-	TransDateGMT DATE NOT NULL
+	TransDateGMT DATE NOT NULL,
+	IsTest BIT NOT NULL
 ) ON ps_N88_rptWinloss_monthly(WinlostDate)
 
 GO

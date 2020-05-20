@@ -1,5 +1,5 @@
-/*<info serverAlias="DBEXT-bodb02" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
-ALTER PROCEDURE N88_Rpt_Winloss
+/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
+CREATE PROCEDURE N88_Rpt_Winloss
 (
 	@LicenseeId INT,
 	@FilterBy TINYINT,
@@ -11,6 +11,7 @@ ALTER PROCEDURE N88_Rpt_Winloss
 	@CurrencyIds VARCHAR(MAX),
 	@DisplayCurrency VARCHAR(3),
 	@IsNoDrawTicket BIT,
+	@IsIncludedTestData BIT,
 	@PageIndex INT = 1,
 	@PageSize INT = 50,
 	@TotalRows INT = 0 OUTPUT
@@ -19,7 +20,7 @@ AS
 /*
 	Created: 20200508@Sol
 	Task : N88 report winloss
-	DB: DBEXT-bodb02
+	DB: DBN88-bodb_N88
 	
 	Revisions:
 		- 20200508@Sol: Create new report [Redmine:#133254]
@@ -67,6 +68,22 @@ BEGIN
 	)
 
 	CREATE TABLE #tmpResult 
+	(
+		[Group] VARCHAR(500),
+		CurrencyId INT,
+		Turnover MONEY,
+		BasedTurnover MONEY,
+		BasedTurnoverNoDraw MONEY,
+		GGR MONEY,
+		BasedGGR MONEY,
+		BetCount INT,
+		AvgBetAmount MONEY,
+		BasedAvgBetAmount MONEY,
+		UniquePlayers INT,
+		Margin MONEY
+	)
+
+	CREATE TABLE #tmpResultByGroup 
 	(
 		RowNumber INT,
 		[Group] VARCHAR(500),
@@ -120,23 +137,25 @@ BEGIN
 			,TransDateGMT	
 			,LicenseeID	
 			,ex.Rate
-		FROM bodb_LicenseeReport.dbo.N88_RptWinloss dt WITH(NOLOCK)
+		FROM N88_RptWinloss dt WITH(NOLOCK)
 				INNER JOIN @Exchange ex
 					ON dt.Currency = ex.exchangeid AND dt.Winlostdate BETWEEN ex.FromDate AND ex.ToDate
-				INNER JOIN bodb_3rdProduct.dbo.TpGameType g WITH(NOLOCK)
+				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
 		WHERE 
 			dt.TimeZone = 8
-			AND 1 = CASE 
-					WHEN @IsNoDrawTicket = 1 AND dt.StatusID IN (1,2) THEN 1
-					WHEN @IsNoDrawTicket = 0 AND dt.StatusID IN (1,2,4) THEN 1
-					ELSE 0
-				END
+			AND 1 = 
+					CASE 
+						WHEN @IsNoDrawTicket = 1 AND dt.StatusID IN (1,2) THEN 1
+						WHEN @IsNoDrawTicket = 0 AND dt.StatusID IN (1,2,4) THEN 1
+						ELSE 0
+					END
 			AND dt.LicenseeID = @LicenseeId
 			AND WinlostDateGMT BETWEEN @FromDate AND @ToDate
 			AND (dt.UserName = @UserName OR ISNULL(@UserName,'') = '')
 			AND dt.GameType IN (SELECT val FROM bodb02.dbo.strsplit(@ProductIds,',') t)
 			AND dt.Currency IN (SELECT val FROM bodb02.dbo.strsplit(@CurrencyIds,',') t)
+			AND (dt.IsTest = 0 OR @IsIncludedTestData = 1)
 
 	END
 	---- by transdate
@@ -164,8 +183,8 @@ BEGIN
 			,TransDate	
 			,TransDateGMT	
 			,LicenseeID	
-		FROM bodb_LicenseeReport.dbo.N88_RptWinloss dt WITH(NOLOCK)
-				INNER JOIN bodb_3rdProduct.dbo.TpGameType g WITH(NOLOCK)
+		FROM dbo.N88_RptWinloss dt WITH(NOLOCK)
+				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
 		WHERE 
 			dt.TimeZone = 8
@@ -179,6 +198,7 @@ BEGIN
 			AND (dt.UserName = @UserName OR ISNULL(@UserName,'') = '')
 			AND dt.GameType IN (SELECT val FROM bodb02.dbo.strsplit(@ProductIds,',') t)
 			AND dt.Currency IN (SELECT val FROM bodb02.dbo.strsplit(@CurrencyIds,',') t)
+			AND (dt.IsTest = 0 OR @IsIncludedTestData = 1)
 
 		---- get min/max winlostdate
 		SELECT @MinDate = MIN(WinlostDate), @MaxDate = MAX(WinlostDate)
@@ -222,8 +242,7 @@ BEGIN
 	BEGIN
 		INSERT INTO #tmpResult 
 		(
-			RowNumber
-			,[Group]
+			[Group]
 			,CurrencyId
 			,Turnover
 			,BasedTurnover
@@ -237,8 +256,7 @@ BEGIN
 			,Margin
 		)
 		SELECT 
-			ROW_NUMBER() OVER(ORDER BY CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END, CurrencyId) AS RowNumber 
-			,CONVERT(VARCHAR(500), CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END, 101) AS [Group] 
+			CONVERT(VARCHAR(500), CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END, 101) AS [Group] 
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
 			,SUM(TurnOver * Exrate) AS BasedTurnover
@@ -260,8 +278,7 @@ BEGIN
 	BEGIN
 		INSERT INTO #tmpResult 
 		(
-			RowNumber
-			,[Group]
+			[Group]
 			,CurrencyId
 			,Turnover
 			,BasedTurnover
@@ -275,11 +292,7 @@ BEGIN
 			,Margin
 		)
 		SELECT 
-			ROW_NUMBER() OVER
-							(
-								ORDER BY DATEADD(MONTH, DATEDIFF(MONTH, 0, (CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END)), 0), CurrencyId
-							) AS RowNumber 
-			,RIGHT(CONVERT(VARCHAR(10),DATEADD(MONTH, DATEDIFF(MONTH, 0, (CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END)), 0), 103),7) AS [Group]
+			RIGHT(CONVERT(VARCHAR(10),DATEADD(MONTH, DATEDIFF(MONTH, 0, (CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END)), 0), 103),7) AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
 			,SUM(Turnover * Exrate) AS BasedTurnover
@@ -301,8 +314,7 @@ BEGIN
 	BEGIN
 		INSERT INTO #tmpResult 
 		(
-			RowNumber
-			,[Group]
+			[Group]
 			,CurrencyId
 			,Turnover
 			,BasedTurnover
@@ -316,8 +328,7 @@ BEGIN
 			,Margin
 		)
 		SELECT 
-			ROW_NUMBER() OVER(ORDER BY GameTypeName, CurrencyId) AS RowNumber 
-			,GameTypeName AS [Group]
+			GameTypeName AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
 			,SUM(Turnover * Exrate) AS BasedTurnover
@@ -339,8 +350,7 @@ BEGIN
 	BEGIN
 		INSERT INTO #tmpResult 
 		(
-			RowNumber
-			,[Group]
+			[Group]
 			,CurrencyId
 			,Turnover
 			,BasedTurnover
@@ -354,8 +364,7 @@ BEGIN
 			,Margin
 		)
 		SELECT 
-			ROW_NUMBER() OVER(ORDER BY CurrencyId) AS RowNumber 
-			,CurrencyId AS [Group]
+			CurrencyId AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
 			,SUM(Turnover * Exrate) AS BasedTurnover
@@ -375,8 +384,7 @@ BEGIN
 	BEGIN
 		INSERT INTO #tmpResult 
 		(
-			RowNumber
-			,[Group]
+			[Group]
 			,CurrencyId
 			,Turnover
 			,BasedTurnover
@@ -390,8 +398,7 @@ BEGIN
 			,Margin
 		)
 		SELECT 
-			ROW_NUMBER() OVER(ORDER BY UserName, CurrencyId) AS RowNumber 
-			,UserName AS [Group]
+			UserName AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
 			,SUM(Turnover * Exrate) AS BasedTurnover
@@ -408,9 +415,9 @@ BEGIN
 	END
 
 	--final result
-	SELECT @TotalRows = COUNT(1) FROM #tmpResult
-
+	INSERT INTO #tmpResultByGroup
 	SELECT 
+		DENSE_RANK() OVER(ORDER BY [Group]) RowNumber,
 		[Group]
 		,CurrencyId
 		,Turnover
@@ -424,6 +431,12 @@ BEGIN
 		,UniquePlayers
 		,Margin
 	FROM #tmpResult
+
+	--return data
+	SELECT @TotalRows = MAX(RowNumber) FROM #tmpResultByGroup
+
+	SELECT * 
+	FROM #tmpResultByGroup
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 
 	-- total
@@ -439,6 +452,7 @@ BEGIN
 	DROP TABLE #tmpResult
 	DROP TABLE #tmpN88_RptWinloss
 	DROP TABLE #tmpN88_RptWinlossTransDate
+	DROP TABLE #tmpResultByGroup
 
 END
 GO

@@ -1,15 +1,16 @@
-USE bodb_LicenseeReport
+/*<info serverAlias="DBN88-bodb_N88" isFunction="0" isNested=""></info>*/
+
+USE bodb_N88
 
 GO
 
-/*<info serverAlias="DBLIC-bodb_LicenseeReport" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
-ALTER PROCEDURE [dbo].Task_N88_ImportData_3rdProducts
+CREATE PROCEDURE [dbo].Task_N88_ImportData_3rdProducts
 	@WinlostDate SMALLDATETIME
 AS
 
 /*
 	Created: 20200506@Sol
-	DB: DBLIC-bodb_LicenseeReport
+	DB: DBN88-bodb_N88
 	Task: Job - Import data of 3rd Products
 
 	Revisions:
@@ -38,7 +39,8 @@ BEGIN
 			WinlostDateGMT	DATE NOT NULL,
 			[TimeZone]	SMALLINT NOT NULL,
 			TransDate DATE NOT NULL,
-			TransDateGMT DATE NOT NULL
+			TransDateGMT DATE NOT NULL,
+			IsTest	BIT NOT NULL
 		)
 		
 		;WITH rs AS 
@@ -47,29 +49,35 @@ BEGIN
 				CAST(DATEADD(hh, -4, transtime) AS DATE) transdate , 
 				CAST(DATEADD(hh, 8, transtime) AS DATE) transdateGMT, 
 				CAST(DATEADD(hh, -4, SettledTime) AS DATE) WinlostDate, 
-				CustId, UserName, GameType, CurrencyId, 
+				td.CustId, td.UserName, GameType, td.CurrencyId, 
 				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN Stake/1000 ELSE Stake END Stake, 
 				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN winlostamount/1000 ELSE winlostamount END winlostamount,
 				transid , l.LicenseeID, TicketStatus, 
-				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone
-			FROM bodb_3rdProduct.dbo.TpBetRecord td 
-				INNER JOIN bodb02.dbo.Exchange exCode
+				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone,
+				c.IsTest
+			FROM bodb_3rdProduct.dbo.TpBetRecord td WITH(NOLOCK)
+				INNER JOIN bodb02.dbo.Exchange exCode WITH(NOLOCK)
 					ON td.CurrencyId = exCode.exchangeid
-				INNER JOIN bodb_3rdProduct.dbo.ServerInfo s
+				INNER JOIN bodb_3rdProduct.dbo.ServerInfo s WITH(NOLOCK)
 					ON td.SiteId = s.SiteId
-				INNER JOIN bodb_licensee.dbo.Licensees l
+				INNER JOIN bodb_licensee.dbo.Licensees l WITH(NOLOCK)
 					ON l.LicenseeName = s.LicenseeName
+				INNER JOIN Customer c WITH(NOLOCK)
+					ON td.CustId = c.CustId
 			WHERE TicketStatus in (1,2,4)
 					AND CAST(DATEADD(hh, -4, SettledTime) as date) = @WinlostDate
 		)
 
 		INSERT INTO #tmpN88_RptWinloss 
-			(TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID )
+		(
+			TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, 
+			Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID, IsTest
+		)
 		SELECT transdate, transdateGMT, WinlostDate ,WinlostDateGMT, CustId, UserName, GameType, CurrencyId, 
 			SUM(stake) AS turnover, SUM(winlostamount) ggr, COUNT(transid) betcount, rs.LicenseeID,  8 AS timezone
-			,TicketStatus
+			,TicketStatus, IsTest
 		FROM rs
-		GROUP BY transdate, transdateGMT, WinlostDate ,WinlostDateGMT, CustId, UserName, GameType, CurrencyId, LicenseeID,TicketStatus
+		GROUP BY transdate, transdateGMT, WinlostDate ,WinlostDateGMT, CustId, UserName, GameType, CurrencyId, LicenseeID,TicketStatus, IsTest
 
 	END
 
@@ -94,8 +102,9 @@ BEGIN
 				,TARGET.TimeZone		= SOURCE.TimeZone
 				,TARGET.TransDate		= SOURCE.TransDate
 				,TARGET.TransDateGMT	= SOURCE.TransDateGMT
+				,TARGET.IsTest			= SOURCE.IsTest
 	WHEN NOT MATCHED BY TARGET THEN 
-		INSERT (TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID)
+		INSERT (TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID, IsTest)
 		VALUES 
 		(
 			SOURCE.TransDate, 
@@ -111,7 +120,8 @@ BEGIN
 			SOURCE.BetCount, 
 			SOURCE.LicenseeID, 
 			SOURCE.TimeZone, 
-			SOURCE.StatusID
+			SOURCE.StatusID,
+			SOURCE.IsTest
 		)
 	WHEN NOT MATCHED BY SOURCE AND TARGET.WinlostDate = @Winlostdate THEN
 		DELETE

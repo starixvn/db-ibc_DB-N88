@@ -1,7 +1,8 @@
+/*<info serverAlias="DBN88-msdb" isFunction="0" isNested=""></info>*/
 /*	
 	Created: 20200511@Sol
 	Task: Create job for daily generate data - [Redmine:#133254]
-	DB: DBLIC/bodb_LicenseeReport
+	DB: DBN88/msdb
 */
 
 USE [msdb]
