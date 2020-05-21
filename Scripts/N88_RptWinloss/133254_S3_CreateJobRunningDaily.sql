@@ -9,7 +9,6 @@ USE [msdb]
 
 GO
 
-/****** Object:  Job [bodb_LicenseeReport: Generate daily data for N88_RptWinloss]    Script Date: 5/14/2020 1:43:15 PM ******/
 BEGIN TRANSACTION
 DECLARE @ReturnCode INT
 SELECT @ReturnCode = 0
@@ -22,7 +21,7 @@ IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
 END
 
 DECLARE @jobId BINARY(16)
-EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'bodb_LicenseeReport: Generate daily data for N88_RptWinloss', 
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'bodb_N88: Generate daily data for N88_RptWinloss', 
 		@enabled=0, 
 		@notify_level_eventlog=0, 
 		@notify_level_email=0, 
@@ -45,12 +44,12 @@ EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Generate
 		@retry_interval=0, 
 		@os_run_priority=0, @subsystem=N'TSQL', 
 		@command=N'EXEC dbo.Task_N88_ImportData_Job', 
-		@database_name=N'bodb_LicenseeReport', 
+		@database_name=N'bodb_N88', 
 		@flags=0
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
 EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
 IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
-EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Daily After MoveBet - Move Tables', 
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'Generate daily data', 
 		@enabled=1, 
 		@freq_type=4, 
 		@freq_interval=1, 

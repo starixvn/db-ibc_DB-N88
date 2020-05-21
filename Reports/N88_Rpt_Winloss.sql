@@ -1,5 +1,5 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
-CREATE PROCEDURE N88_Rpt_Winloss
+ALTER PROCEDURE N88_Rpt_Winloss
 (
 	@LicenseeId INT,
 	@FilterBy TINYINT,
@@ -100,7 +100,7 @@ BEGIN
 		Margin MONEY
 	)
 
-	DECLARE @Exchange TABLE (FromDate SMALLDATETIME, ToDate SMALLDATETIME, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #Exchange(FromDate SMALLDATETIME, ToDate SMALLDATETIME, ExchangeId INT, Rate FLOAT)
 	DECLARE @RowStart INT , @RowEnd INT
 	DECLARE @MinDate DATE, @MaxDate DATE
 
@@ -111,15 +111,15 @@ BEGIN
 	BEGIN
 
 		-- report
-		INSERT INTO @Exchange (FromDate, ToDate, ExchangeId, Rate)
+		INSERT INTO #Exchange(FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeID, Rate
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(DATEADD(DAY,-1,@FromDate), @ToDate, @DisplayCurrency, '') t_ex
 	
 		-- prepare common data
-		INSERT INTO #tmpN88_RptWinloss
+		INSERT INTO #tmpN88_RptWinlossTransDate
 		(
 			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName	
-			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID, Exrate
+			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID
 		)
 		SELECT 
 			WinlostDate	
@@ -136,10 +136,7 @@ BEGIN
 			,TransDate	
 			,TransDateGMT	
 			,LicenseeID	
-			,ex.Rate
 		FROM N88_RptWinloss dt WITH(NOLOCK)
-				INNER JOIN @Exchange ex
-					ON dt.Currency = ex.exchangeid AND dt.Winlostdate BETWEEN ex.FromDate AND ex.ToDate
 				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
 		WHERE 
@@ -153,9 +150,35 @@ BEGIN
 			AND dt.LicenseeID = @LicenseeId
 			AND WinlostDateGMT BETWEEN @FromDate AND @ToDate
 			AND (dt.UserName = @UserName OR ISNULL(@UserName,'') = '')
-			AND dt.GameType IN (SELECT val FROM bodb02.dbo.strsplit(@ProductIds,',') t)
-			AND dt.Currency IN (SELECT val FROM bodb02.dbo.strsplit(@CurrencyIds,',') t)
+			AND dt.GameType IN (SELECT val FROM bodb02.dbo.f_StringSplit(@ProductIds,',') t)
+			AND dt.Currency IN (SELECT val FROM bodb02.dbo.f_StringSplit(@CurrencyIds,',') t)
 			AND (dt.IsTest = 0 OR @IsIncludedTestData = 1)
+
+		-- prepare common data
+		INSERT INTO #tmpN88_RptWinloss
+		(
+			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName	
+			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID, Exrate
+		)
+		SELECT 
+			WinlostDate	
+			,CustId	
+			,dt.GameTypeName	
+			,dt.CurrencyId	
+			,TurnOver	
+			,Winloss	
+			,BetCount	
+			,StatusID	
+			,UserName	
+			,WinlostDateGMT	
+			,TimeZone	
+			,TransDate	
+			,TransDateGMT	
+			,LicenseeID	
+			,ex.Rate
+		FROM #tmpN88_RptWinlossTransDate dt 
+				INNER JOIN #Exchange ex
+					ON dt.CurrencyId = ex.exchangeid AND dt.Winlostdate BETWEEN ex.FromDate AND ex.ToDate
 
 	END
 	---- by transdate
@@ -196,8 +219,8 @@ BEGIN
 			AND dt.LicenseeID = @LicenseeId
 			AND TransDateGMT BETWEEN @FromDate AND @ToDate
 			AND (dt.UserName = @UserName OR ISNULL(@UserName,'') = '')
-			AND dt.GameType IN (SELECT val FROM bodb02.dbo.strsplit(@ProductIds,',') t)
-			AND dt.Currency IN (SELECT val FROM bodb02.dbo.strsplit(@CurrencyIds,',') t)
+			AND dt.GameType IN (SELECT val FROM bodb02.dbo.f_StringSplit(@ProductIds,',') t)
+			AND dt.Currency IN (SELECT val FROM bodb02.dbo.f_StringSplit(@CurrencyIds,',') t)
 			AND (dt.IsTest = 0 OR @IsIncludedTestData = 1)
 
 		---- get min/max winlostdate
@@ -205,7 +228,7 @@ BEGIN
 		FROM #tmpN88_RptWinlossTransDate
 
 		-- report
-		INSERT INTO @Exchange (FromDate, ToDate, ExchangeId, Rate)
+		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeID, Rate
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') t_ex
 
@@ -232,7 +255,7 @@ BEGIN
 			,LicenseeID	
 			,ex.Rate
 		FROM #tmpN88_RptWinlossTransDate dt 
-				INNER JOIN @Exchange ex
+				INNER JOIN #Exchange ex
 					ON dt.CurrencyId = ex.exchangeid AND dt.Winlostdate BETWEEN ex.FromDate AND ex.ToDate
 
 	END
@@ -435,9 +458,22 @@ BEGIN
 	--return data
 	SELECT @TotalRows = MAX(RowNumber) FROM #tmpResultByGroup
 
-	SELECT * 
+	SELECT RowNumber,
+		[Group]
+		,CurrencyId
+		,Turnover
+		,BasedTurnover
+		,BasedTurnoverNoDraw
+		,GGR
+		,BasedGGR
+		,BetCount
+		,AvgBetAmount
+		,BasedAvgBetAmount
+		,UniquePlayers
+		,Margin 
 	FROM #tmpResultByGroup
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
+	ORDER BY [Group], CurrencyId
 
 	-- total
 	SELECT 
@@ -453,6 +489,7 @@ BEGIN
 	DROP TABLE #tmpN88_RptWinloss
 	DROP TABLE #tmpN88_RptWinlossTransDate
 	DROP TABLE #tmpResultByGroup
+	DROP TABLE #Exchange
 
 END
 GO

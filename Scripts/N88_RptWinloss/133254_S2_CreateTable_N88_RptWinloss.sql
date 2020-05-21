@@ -28,3 +28,12 @@ CREATE TABLE [dbo].N88_RptWinloss(
 ) ON ps_N88_rptWinloss_monthly(WinlostDate)
 
 GO
+
+CREATE CLUSTERED INDEX CIX_N88_RptWinloss ON [dbo].[N88_RptWinloss]
+(
+	[WinlostDate] ASC,
+	[TimeZone] ASC,
+	[WinlostDateGMT] ASC,
+	[CustId] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON)
+GO
