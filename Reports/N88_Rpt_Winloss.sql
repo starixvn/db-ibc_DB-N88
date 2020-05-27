@@ -12,6 +12,7 @@ ALTER PROCEDURE N88_Rpt_Winloss
 	@DisplayCurrency VARCHAR(3),
 	@IsNoDrawTicket BIT,
 	@IsIncludedTestData BIT,
+	@TimeZone SMALLINT = 8,
 	@PageIndex INT = 1,
 	@PageSize INT = 50,
 	@TotalRows INT = 0 OUTPUT
@@ -140,7 +141,7 @@ BEGIN
 				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
 		WHERE 
-			dt.TimeZone = 8
+			dt.TimeZone = @TimeZone
 			AND 1 = 
 					CASE 
 						WHEN @IsNoDrawTicket = 1 AND dt.StatusID IN (1,2) THEN 1
@@ -210,7 +211,7 @@ BEGIN
 				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
 		WHERE 
-			dt.TimeZone = 8
+			dt.TimeZone = @TimeZone
 			AND 1 = CASE 
 					WHEN @IsNoDrawTicket = 1 AND dt.StatusID IN (1,2) THEN 1
 					WHEN @IsNoDrawTicket = 0 AND dt.StatusID IN (1,2,4) THEN 1
@@ -464,13 +465,13 @@ BEGIN
 		,Turnover
 		,BasedTurnover
 		,BasedTurnoverNoDraw
-		,GGR
-		,BasedGGR
+		,(-1) * GGR AS GGR
+		,(-1) * BasedGGR AS BasedGGR 
 		,BetCount
 		,AvgBetAmount
 		,BasedAvgBetAmount
 		,UniquePlayers
-		,Margin 
+		,(-1) * Margin AS Margin
 	FROM #tmpResultByGroup
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY [Group], CurrencyId
@@ -478,11 +479,11 @@ BEGIN
 	-- total
 	SELECT 
 		SUM(Turnover * Exrate) AS TotalBasedTurnover
-		,SUM(Winloss * Exrate) AS TotalBasedGGR
+		,(-1) * SUM(Winloss * Exrate) AS TotalBasedGGR
 		,SUM(BetCount) AS TotalBetCount
 		,CAST(ISNULL(SUM(TurnOver * Exrate)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS TotalBasedAvgBetAmount
 		,COUNT(DISTINCT CustId) AS TotalUniquePlayers
-		,CAST(ISNULL(SUM(Winloss * Exrate)/NULLIF(SUM(CASE WHEN StatusID IN (1,2) THEN turnover * Exrate END),0),0) AS MONEY) * 100 AS TotalMargin
+		,(-1) * CAST(ISNULL(SUM(Winloss * Exrate)/NULLIF(SUM(CASE WHEN StatusID IN (1,2) THEN turnover * Exrate END),0),0) AS MONEY) * 100 AS TotalMargin
 	FROM #tmpN88_RptWinloss
 
 	DROP TABLE #tmpResult

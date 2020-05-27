@@ -4,7 +4,7 @@ USE bodb_N88
 
 GO
 
-CREATE PROCEDURE [dbo].Task_N88_ImportData_3rdProducts
+ALTER PROCEDURE [dbo].Task_N88_ImportData_3rdProducts
 	@WinlostDate SMALLDATETIME
 AS
 
@@ -55,17 +55,19 @@ BEGIN
 				transid , l.LicenseeID, TicketStatus, 
 				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone,
 				c.IsTest
-			FROM bodb_3rdProduct.dbo.TpBetRecord td WITH(NOLOCK)
+			FROM dbo.TpBetRecord td WITH(NOLOCK)
 				INNER JOIN bodb02.dbo.Exchange exCode WITH(NOLOCK)
 					ON td.CurrencyId = exCode.exchangeid
-				INNER JOIN bodb_3rdProduct.dbo.ServerInfo s WITH(NOLOCK)
+				INNER JOIN dbo.ServerInfo s WITH(NOLOCK)
 					ON td.SiteId = s.SiteId
 				INNER JOIN bodb_licensee.dbo.Licensees l WITH(NOLOCK)
 					ON l.LicenseeName = s.LicenseeName
 				INNER JOIN Customer c WITH(NOLOCK)
 					ON td.CustId = c.CustId
-			WHERE TicketStatus in (1,2,4)
-					AND CAST(DATEADD(hh, -4, SettledTime) as date) = @WinlostDate
+			WHERE 
+				WinlostDate BETWEEN DATEADD(DAY, -1, @WinlostDate) AND DATEADD(DAY, 1, @WinlostDate)
+				AND TicketStatus in (1,2,4) 
+				AND CAST(DATEADD(hh, -4, SettledTime) as date) = @WinlostDate
 		)
 
 		INSERT INTO #tmpN88_RptWinloss 
@@ -85,7 +87,9 @@ BEGIN
 	MERGE dbo.N88_RptWinloss AS TARGET
 	USING #tmpN88_RptWinloss AS SOURCE
 	ON 
-			TARGET.WinlostDate = SOURCE.WinlostDate
+			TARGET.TransDate = SOURCE.TransDate
+		AND TARGET.TransDateGMT = SOURCE.TransDateGMT
+		AND TARGET.WinlostDate = SOURCE.WinlostDate
 		AND TARGET.WinlostDateGMT = SOURCE.WinlostDateGMT
 		AND TARGET.CustId = SOURCE.CustId
 		AND TARGET.GameType = SOURCE.GameType
@@ -100,8 +104,6 @@ BEGIN
 				,TARGET.BetCount		= SOURCE.BetCount
 				,TARGET.UserName		= SOURCE.UserName
 				,TARGET.TimeZone		= SOURCE.TimeZone
-				,TARGET.TransDate		= SOURCE.TransDate
-				,TARGET.TransDateGMT	= SOURCE.TransDateGMT
 				,TARGET.IsTest			= SOURCE.IsTest
 	WHEN NOT MATCHED BY TARGET THEN 
 		INSERT (TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID, IsTest)

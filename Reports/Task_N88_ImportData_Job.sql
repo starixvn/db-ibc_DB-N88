@@ -39,7 +39,7 @@ BEGIN
 	SELECT @WinlostDate = @FromDate
 	WHILE  @WinlostDate <= @ToDate
 	BEGIN
-		SELECT @ErrMsg = 'SQL Server Job System: ''Affiliate_N8G: Generate Data Daily'' failed on' + @@SERVERNAME
+		SELECT @ErrMsg = 'SQL Server Job System: ''bodb_N88: Generate daily data for N88_RptWinloss'' failed on' + @@SERVERNAME
 						+ ' with @WinlostDate = ' + CONVERT(VARCHAR(10), @WinlostDate, 120)
 		
 		-- 3rd products
