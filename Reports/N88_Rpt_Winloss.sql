@@ -7,6 +7,7 @@ ALTER PROCEDURE N88_Rpt_Winloss
 	@FromDate DATE, 
 	@ToDate DATE,
 	@ProductIds VARCHAR(MAX),
+	@UserNameFilterId TINYINT = 1,
 	@UserName VARCHAR(30) = '',
 	@CurrencyIds VARCHAR(MAX),
 	@DisplayCurrency VARCHAR(3),
@@ -25,6 +26,7 @@ AS
 	
 	Revisions:
 		- 20200508@Sol: Create new report [Redmine:#133254]
+		- 20200506@Sol: Remove IsTest column in N88_RptWinloss [RedmineID: #135372]
 	
 */
 BEGIN
@@ -42,6 +44,8 @@ BEGIN
 		,BetCount	INT
 		,StatusID	TINYINT
 		,UserName	VARCHAR(30)
+		,SabaId		VARCHAR(50)
+		,SabaSystemId VARCHAR(50)
 		,WinlostDateGMT	DATE
 		,TimeZone	SMALLINT
 		,TransDate	DATE
@@ -60,6 +64,8 @@ BEGIN
 		,BetCount	INT
 		,StatusID	TINYINT
 		,UserName	VARCHAR(30)
+		,SabaId		VARCHAR(50)
+		,SabaSystemId VARCHAR(50)
 		,WinlostDateGMT	DATE
 		,TimeZone	SMALLINT
 		,TransDate	DATE
@@ -71,6 +77,8 @@ BEGIN
 	CREATE TABLE #tmpResult 
 	(
 		[Group] VARCHAR(500),
+		SabaId VARCHAR(50),
+		SabaSystemId VARCHAR(50),
 		CurrencyId INT,
 		Turnover MONEY,
 		BasedTurnover MONEY,
@@ -88,6 +96,8 @@ BEGIN
 	(
 		RowNumber INT,
 		[Group] VARCHAR(500),
+		SabaId VARCHAR(50),
+		SabaSystemId VARCHAR(50),
 		CurrencyId INT,
 		Turnover MONEY,
 		BasedTurnover MONEY,
@@ -119,27 +129,31 @@ BEGIN
 		-- prepare common data
 		INSERT INTO #tmpN88_RptWinlossTransDate
 		(
-			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName	
+			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName, SabaId, SabaSystemId
 			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID
 		)
 		SELECT 
 			WinlostDate	
-			,CustId	
+			,dt.CustId	
 			,g.TypeName	
 			,dt.Currency	
 			,TurnOver	
 			,Winloss	
 			,BetCount	
 			,StatusID	
-			,UserName	
+			,dt.UserName	
+			,TpUserName
+			,TpSystemUserName
 			,WinlostDateGMT	
 			,TimeZone	
 			,TransDate	
 			,TransDateGMT	
 			,LicenseeID	
-		FROM N88_RptWinloss dt WITH(NOLOCK)
+		FROM dbo.N88_RptWinloss dt WITH(NOLOCK)
 				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
+				INNER JOIN dbo.Customer c WITH(NOLOCK)
+					ON c.CustId = dt.CustId
 		WHERE 
 			dt.TimeZone = @TimeZone
 			AND 1 = 
@@ -150,15 +164,22 @@ BEGIN
 					END
 			AND dt.LicenseeID = @LicenseeId
 			AND WinlostDateGMT BETWEEN @FromDate AND @ToDate
-			AND (dt.UserName = @UserName OR ISNULL(@UserName,'') = '')
+			AND 
+				(
+					ISNULL(@UserName,'') = ''
+					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
+										WHEN @UserNameFilterId = 2 THEN c.TpUserName
+										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
+									END
+				)
 			AND dt.GameType IN (SELECT val FROM bodb02.dbo.f_StringSplit(@ProductIds,',') t)
 			AND dt.Currency IN (SELECT val FROM bodb02.dbo.f_StringSplit(@CurrencyIds,',') t)
-			AND (dt.IsTest = 0 OR @IsIncludedTestData = 1)
+			AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 
 		-- prepare common data
 		INSERT INTO #tmpN88_RptWinloss
 		(
-			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName	
+			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName, SabaId, SabaSystemId
 			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID, Exrate
 		)
 		SELECT 
@@ -171,6 +192,8 @@ BEGIN
 			,BetCount	
 			,StatusID	
 			,UserName	
+			,SabaId
+			,SabaSystemId
 			,WinlostDateGMT	
 			,TimeZone	
 			,TransDate	
@@ -189,19 +212,21 @@ BEGIN
 		-- prepare common data
 		INSERT INTO #tmpN88_RptWinlossTransDate
 		(
-			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName	
+			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName, SabaId, SabaSystemId	
 			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID
 		)
 		SELECT 
 			WinlostDate	
-			,CustId	
+			,dt.CustId	
 			,g.TypeName	
 			,dt.Currency	
 			,TurnOver	
 			,Winloss	
 			,BetCount	
 			,StatusID	
-			,UserName	
+			,dt.UserName	
+			,TpUserName
+			,TpSystemUserName
 			,WinlostDateGMT	
 			,TimeZone	
 			,TransDate	
@@ -210,6 +235,8 @@ BEGIN
 		FROM dbo.N88_RptWinloss dt WITH(NOLOCK)
 				INNER JOIN dbo.TpGameType g WITH(NOLOCK)
 					ON g.Type = dt.GameType
+				INNER JOIN dbo.Customer c WITH(NOLOCK)
+					ON c.CustId = dt.CustId
 		WHERE 
 			dt.TimeZone = @TimeZone
 			AND 1 = CASE 
@@ -219,10 +246,17 @@ BEGIN
 				END
 			AND dt.LicenseeID = @LicenseeId
 			AND TransDateGMT BETWEEN @FromDate AND @ToDate
-			AND (dt.UserName = @UserName OR ISNULL(@UserName,'') = '')
+			AND 
+				(
+					ISNULL(@UserName,'') = ''
+					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
+										WHEN @UserNameFilterId = 2 THEN c.TpUserName
+										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
+									END
+				)
 			AND dt.GameType IN (SELECT val FROM bodb02.dbo.f_StringSplit(@ProductIds,',') t)
 			AND dt.Currency IN (SELECT val FROM bodb02.dbo.f_StringSplit(@CurrencyIds,',') t)
-			AND (dt.IsTest = 0 OR @IsIncludedTestData = 1)
+			AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 
 		---- get min/max winlostdate
 		SELECT @MinDate = MIN(WinlostDate), @MaxDate = MAX(WinlostDate)
@@ -236,7 +270,7 @@ BEGIN
 		-- prepare common data
 		INSERT INTO #tmpN88_RptWinloss
 		(
-			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName	
+			WinlostDate, CustId, GameTypeName, CurrencyId, TurnOver, Winloss, BetCount, StatusID, UserName, SabaId, SabaSystemId
 			, WinlostDateGMT, TimeZone, TransDate, TransDateGMT, LicenseeID, Exrate
 		)
 		SELECT 
@@ -249,6 +283,8 @@ BEGIN
 			,BetCount	
 			,StatusID	
 			,UserName	
+			,SabaId
+			,SabaSystemId
 			,WinlostDateGMT	
 			,TimeZone	
 			,TransDate	
@@ -409,6 +445,8 @@ BEGIN
 		INSERT INTO #tmpResult 
 		(
 			[Group]
+			,SabaId
+			,SabaSystemId
 			,CurrencyId
 			,Turnover
 			,BasedTurnover
@@ -423,6 +461,8 @@ BEGIN
 		)
 		SELECT 
 			UserName AS [Group]
+			,SabaId
+			,SabaSystemId
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
 			,SUM(Turnover * Exrate) AS BasedTurnover
@@ -435,7 +475,7 @@ BEGIN
 			,COUNT(DISTINCT CustId) AS UniquePlayers
 			,CAST(ISNULL(SUM(Winloss)/NULLIF(SUM(CASE WHEN statusid IN (1,2) THEN TurnOver ELSE 0 END),0),0) AS MONEY) * 100 AS Margin
 		FROM #tmpN88_RptWinloss
-		GROUP BY UserName, CurrencyId
+		GROUP BY UserName,SabaId ,SabaSystemId, CurrencyId
 	END
 
 	--final result
@@ -443,6 +483,8 @@ BEGIN
 	SELECT 
 		DENSE_RANK() OVER(ORDER BY [Group]) RowNumber,
 		[Group]
+		,SabaId
+		,SabaSystemId
 		,CurrencyId
 		,Turnover
 		,BasedTurnover
@@ -461,6 +503,8 @@ BEGIN
 
 	SELECT RowNumber,
 		[Group]
+		,SabaId
+		,SabaSystemId
 		,CurrencyId
 		,Turnover
 		,BasedTurnover

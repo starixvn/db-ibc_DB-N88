@@ -15,6 +15,7 @@ AS
 
 	Revisions:
 		- 20200506@Sol: Initialize SP [RedmineID: #133254]
+		- 20200506@Sol: Remove IsTest column in N88_RptWinloss [RedmineID: #135372]
 */
 
 BEGIN 
@@ -39,8 +40,7 @@ BEGIN
 			WinlostDateGMT	DATE NOT NULL,
 			[TimeZone]	SMALLINT NOT NULL,
 			TransDate DATE NOT NULL,
-			TransDateGMT DATE NOT NULL,
-			IsTest	BIT NOT NULL
+			TransDateGMT DATE NOT NULL
 		)
 		
 		;WITH rs AS 
@@ -53,8 +53,7 @@ BEGIN
 				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN Stake/1000 ELSE Stake END Stake, 
 				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN winlostamount/1000 ELSE winlostamount END winlostamount,
 				transid , l.LicenseeID, TicketStatus, 
-				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone,
-				c.IsTest
+				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone
 			FROM dbo.TpBetRecord td WITH(NOLOCK)
 				INNER JOIN bodb02.dbo.Exchange exCode WITH(NOLOCK)
 					ON td.CurrencyId = exCode.exchangeid
@@ -62,8 +61,6 @@ BEGIN
 					ON td.SiteId = s.SiteId
 				INNER JOIN bodb_licensee.dbo.Licensees l WITH(NOLOCK)
 					ON l.LicenseeName = s.LicenseeName
-				INNER JOIN Customer c WITH(NOLOCK)
-					ON td.CustId = c.CustId
 			WHERE 
 				WinlostDate BETWEEN DATEADD(DAY, -1, @WinlostDate) AND DATEADD(DAY, 1, @WinlostDate)
 				AND TicketStatus in (1,2,4) 
@@ -73,13 +70,13 @@ BEGIN
 		INSERT INTO #tmpN88_RptWinloss 
 		(
 			TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, 
-			Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID, IsTest
+			Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID
 		)
 		SELECT transdate, transdateGMT, WinlostDate ,WinlostDateGMT, CustId, UserName, GameType, CurrencyId, 
 			SUM(stake) AS turnover, SUM(winlostamount) ggr, COUNT(transid) betcount, rs.LicenseeID,  8 AS timezone
-			,TicketStatus, IsTest
+			,TicketStatus
 		FROM rs
-		GROUP BY transdate, transdateGMT, WinlostDate ,WinlostDateGMT, CustId, UserName, GameType, CurrencyId, LicenseeID,TicketStatus, IsTest
+		GROUP BY transdate, transdateGMT, WinlostDate ,WinlostDateGMT, CustId, UserName, GameType, CurrencyId, LicenseeID,TicketStatus
 
 	END
 
@@ -104,9 +101,8 @@ BEGIN
 				,TARGET.BetCount		= SOURCE.BetCount
 				,TARGET.UserName		= SOURCE.UserName
 				,TARGET.TimeZone		= SOURCE.TimeZone
-				,TARGET.IsTest			= SOURCE.IsTest
 	WHEN NOT MATCHED BY TARGET THEN 
-		INSERT (TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID, IsTest)
+		INSERT (TransDate, TransDateGMT, WinlostDate, WinlostDateGMT, CustId, UserName, GameType, Currency, TurnOver, Winloss, BetCount, LicenseeID, TimeZone, StatusID)
 		VALUES 
 		(
 			SOURCE.TransDate, 
@@ -122,8 +118,7 @@ BEGIN
 			SOURCE.BetCount, 
 			SOURCE.LicenseeID, 
 			SOURCE.TimeZone, 
-			SOURCE.StatusID,
-			SOURCE.IsTest
+			SOURCE.StatusID
 		)
 	WHEN NOT MATCHED BY SOURCE AND TARGET.WinlostDate = @Winlostdate THEN
 		DELETE
