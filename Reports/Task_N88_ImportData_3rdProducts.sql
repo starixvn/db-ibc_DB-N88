@@ -50,8 +50,8 @@ BEGIN
 				CAST(DATEADD(hh, 8, transtime) AS DATE) transdateGMT, 
 				CAST(DATEADD(hh, -4, SettledTime) AS DATE) WinlostDate, 
 				td.CustId, td.UserName, GameType, td.CurrencyId, 
-				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN Stake/1000 ELSE Stake END Stake, 
-				CASE WHEN exCode.Code IN ('INH', 'IDR') THEN winlostamount/1000 ELSE winlostamount END winlostamount,
+				CASE WHEN exCode.Code IN ('VND', 'IDR') THEN Stake/1000 ELSE Stake END Stake, 
+				CASE WHEN exCode.Code IN ('VND', 'IDR') THEN winlostamount/1000 ELSE winlostamount END winlostamount,
 				transid , l.LicenseeID, TicketStatus, 
 				CAST(DATEADD(hh, 8, SettledTime) AS DATE) WinlostDateGMT, 8 AS timezone
 			FROM dbo.TpBetRecord td WITH(NOLOCK)

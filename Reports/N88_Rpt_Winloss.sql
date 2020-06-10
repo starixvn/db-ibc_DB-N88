@@ -13,6 +13,7 @@ ALTER PROCEDURE N88_Rpt_Winloss
 	@DisplayCurrency VARCHAR(3),
 	@IsNoDrawTicket BIT,
 	@IsIncludedTestData BIT,
+	@IsDetailInOriginalCurr BIT = 0,
 	@TimeZone SMALLINT = 8,
 	@PageIndex INT = 1,
 	@PageSize INT = 50,
@@ -81,6 +82,7 @@ BEGIN
 		SabaSystemId VARCHAR(50),
 		CurrencyId INT,
 		Turnover MONEY,
+		TurnoverNoDraw MONEY,
 		BasedTurnover MONEY,
 		BasedTurnoverNoDraw MONEY,
 		GGR MONEY,
@@ -100,6 +102,7 @@ BEGIN
 		SabaSystemId VARCHAR(50),
 		CurrencyId INT,
 		Turnover MONEY,
+		TurnoverNoDraw MONEY,
 		BasedTurnover MONEY,
 		BasedTurnoverNoDraw MONEY,
 		GGR MONEY,
@@ -305,6 +308,7 @@ BEGIN
 			[Group]
 			,CurrencyId
 			,Turnover
+			,TurnoverNoDraw
 			,BasedTurnover
 			,BasedTurnoverNoDraw
 			,GGR
@@ -319,6 +323,7 @@ BEGIN
 			CONVERT(VARCHAR(500), CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END, 101) AS [Group] 
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
+			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver ELSE 0 END) AS TurnoverNoDraw
 			,SUM(TurnOver * Exrate) AS BasedTurnover
 			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver * Exrate END) AS BasedTurnoverNoDraw  
 			,SUM(Winloss) AS GGR 
@@ -341,6 +346,7 @@ BEGIN
 			[Group]
 			,CurrencyId
 			,Turnover
+			,TurnoverNoDraw
 			,BasedTurnover
 			,BasedTurnoverNoDraw
 			,GGR
@@ -355,6 +361,7 @@ BEGIN
 			RIGHT(CONVERT(VARCHAR(10),DATEADD(MONTH, DATEDIFF(MONTH, 0, (CASE WHEN @FilterBy = 1 THEN WinlostDateGMT ELSE TransDateGMT END)), 0), 103),7) AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
+			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver ELSE 0 END) AS TurnoverNoDraw
 			,SUM(Turnover * Exrate) AS BasedTurnover
 			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver * Exrate END) AS BasedTurnoverNoDraw
 			,SUM(Winloss) AS GGR 
@@ -377,6 +384,7 @@ BEGIN
 			[Group]
 			,CurrencyId
 			,Turnover
+			,TurnoverNoDraw
 			,BasedTurnover
 			,BasedTurnoverNoDraw
 			,GGR
@@ -391,6 +399,7 @@ BEGIN
 			GameTypeName AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
+			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver ELSE 0 END) AS TurnoverNoDraw
 			,SUM(Turnover * Exrate) AS BasedTurnover
 			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver * Exrate END) AS BasedTurnoverNoDraw
 			,SUM(Winloss) AS GGR 
@@ -413,6 +422,7 @@ BEGIN
 			[Group]
 			,CurrencyId
 			,Turnover
+			,TurnoverNoDraw
 			,BasedTurnover
 			,BasedTurnoverNoDraw
 			,GGR
@@ -427,6 +437,7 @@ BEGIN
 			CurrencyId AS [Group]
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
+			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver ELSE 0 END) AS TurnoverNoDraw
 			,SUM(Turnover * Exrate) AS BasedTurnover
 			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver * Exrate END) AS BasedTurnoverNoDraw
 			,SUM(Winloss) AS GGR 
@@ -449,6 +460,7 @@ BEGIN
 			,SabaSystemId
 			,CurrencyId
 			,Turnover
+			,TurnoverNoDraw
 			,BasedTurnover
 			,BasedTurnoverNoDraw
 			,GGR
@@ -465,6 +477,7 @@ BEGIN
 			,SabaSystemId
 			,CurrencyId
 			,SUM(TurnOver) AS Turnover  
+			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver ELSE 0 END) AS TurnoverNoDraw
 			,SUM(Turnover * Exrate) AS BasedTurnover
 			,SUM(CASE WHEN StatusID IN (1,2) THEN TurnOver * Exrate END) AS BasedTurnoverNoDraw
 			,SUM(Winloss) AS GGR 
@@ -487,6 +500,7 @@ BEGIN
 		,SabaSystemId
 		,CurrencyId
 		,Turnover
+		,TurnoverNoDraw
 		,BasedTurnover
 		,BasedTurnoverNoDraw
 		,GGR
@@ -507,6 +521,7 @@ BEGIN
 		,SabaSystemId
 		,CurrencyId
 		,Turnover
+		,TurnoverNoDraw
 		,BasedTurnover
 		,BasedTurnoverNoDraw
 		,(-1) * GGR AS GGR
@@ -515,19 +530,22 @@ BEGIN
 		,AvgBetAmount
 		,BasedAvgBetAmount
 		,UniquePlayers
-		,(-1) * Margin AS Margin
+		--,(-1) * Margin AS Margin
+		,(-1) * (CASE WHEN @IsDetailInOriginalCurr = 0 THEN BasedGGR/BasedTurnoverNoDraw ELSE GGR/TurnoverNoDraw END) * 100 AS Margin
 	FROM #tmpResultByGroup
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY [Group], CurrencyId
 
 	-- total
 	SELECT 
-		SUM(Turnover * Exrate) AS TotalBasedTurnover
-		,(-1) * SUM(Winloss * Exrate) AS TotalBasedGGR
+		CAST(SUM(Turnover * Exrate) AS MONEY) AS TotalBasedTurnover
+		,CAST(SUM(CASE WHEN StatusID IN (1,2) THEN turnover * Exrate END) AS MONEY) AS TotalBasedTurnoverNoDraw
+		,(-1) * CAST(SUM(Winloss * Exrate) AS MONEY) AS TotalBasedGGR
 		,SUM(BetCount) AS TotalBetCount
 		,CAST(ISNULL(SUM(TurnOver * Exrate)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS TotalBasedAvgBetAmount
 		,COUNT(DISTINCT CustId) AS TotalUniquePlayers
-		,(-1) * CAST(ISNULL(SUM(Winloss * Exrate)/NULLIF(SUM(CASE WHEN StatusID IN (1,2) THEN turnover * Exrate END),0),0) AS MONEY) * 100 AS TotalMargin
+		--,(-1) * CAST(ISNULL(SUM(Winloss * Exrate)/NULLIF(SUM(CASE WHEN StatusID IN (1,2) THEN turnover * Exrate END),0),0) AS MONEY) * 100 AS TotalMargin
+		,(-1) * ISNULL(SUM(CAST(Winloss * Exrate AS MONEY))/NULLIF(SUM(CASE WHEN StatusID IN (1,2) THEN CAST(turnover * Exrate AS MONEY) END),0),0) * 100 AS TotalMargin
 	FROM #tmpN88_RptWinloss
 
 	DROP TABLE #tmpResult
