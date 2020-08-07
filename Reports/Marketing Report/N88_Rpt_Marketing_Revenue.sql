@@ -44,6 +44,10 @@ BEGIN
 		INSERT INTO #Products (ProductId)
 		SELECT DISTINCT val FROM bodb02.dbo.f_StringSplit(@ProductIds, ',')
 
+		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
+		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FromDate, @ToDate, @DisplayCurrency, '')
+
 		SELECT
 			p.ProductId
 			,CASE WHEN @TotalUsers = 0 THEN 0 ELSE ISNULL(1.0 * Turnover / @TotalUsers, 0) END AS Turnover
@@ -54,12 +58,11 @@ BEGIN
 				FROM (
 					SELECT r.CustId, r.GameType AS ProductId, SUM(Turnover * e.Rate) AS Turnover
 					FROM dbo.N88_RptWinloss r WITH (NOLOCK)
-						CROSS APPLY bodb02.dbo.Lrf_f_GetExchangeRate(r.WinlostDate, r.WinlostDate, @DisplayCurrency, '') e
+						INNER JOIN #Exchange e ON r.WinlostDateGMT BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
 					WHERE r.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
 						AND r.WinlostDateGMT BETWEEN @FromDate AND @ToDate
 						AND r.TimeZone = @TimeZone
 						AND r.LicenseeId = @LicenseeId
-						AND r.Currency = e.ExchangeId
 						AND EXISTS (SELECT 1 FROM #Products p WHERE r.GameType = p.ProductId)
 					GROUP BY r.CustId, r.GameType
 				) t
@@ -68,6 +71,9 @@ BEGIN
 				GROUP BY ProductId
 			) r ON p.ProductId = r.ProductId
 		ORDER BY p.ProductId
+
+		DROP TABLE #Exchange
+		DROP TABLE #Products
 	END
 END
 GO
