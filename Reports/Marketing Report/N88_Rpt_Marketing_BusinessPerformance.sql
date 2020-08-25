@@ -15,6 +15,7 @@ AS
 
 	Revisions:
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
+		- 20200818@Percy: Support special date range [RedmineID: #137395]
 */
 
 BEGIN
@@ -23,10 +24,10 @@ BEGIN
 	DECLARE @SiteId INT
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
-			,@CompareFromDateTimeGMT DATE, @CompareToDateTimeGMT DATE
+			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
-	DECLARE @TotalUsers INT, @CompareTotalUsers INT
-			,@PaidUsers	INT, @ComparePaidUsers INT
+	DECLARE @TotalUsers INT, @PaidUsers	INT
+			,@UptoTotalUsers INT, @CompareUptoTotalUsers INT
 			,@NewlyRegisterUsers INT, @CompareNewlyRegisterUsers INT
 			,@ActiveUsers INT, @CompareActiveUsers INT
 
@@ -44,26 +45,15 @@ BEGIN
 
 		SELECT
 			@TotalUsers = COUNT(1)
-			,@CompareTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
-			,@NewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT THEN 1 ELSE NULL END)
+			,@PaidUsers = COUNT(CASE WHEN ActStatus = 2 THEN 1 ELSE NULL END)
+			,@UptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
+			,@CompareUptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
+			,@NewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
 			,@CompareNewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @CompareFromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
 		FROM dbo.Customer WITH (NOLOCK)
-		WHERE RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND SiteId = @SiteId
+		WHERE SiteId = @SiteId
 			AND IsTest = 0
-
-		SELECT
-			@PaidUsers = COUNT(1)
-			,@ComparePaidUsers = COUNT(CASE WHEN d.CreateTime < @CompareToDateTimeGMT THEN 1 ELSE NULL END)
-		FROM dbo.DepositInfo d WITH (NOLOCK)
-			INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
-		WHERE d.WinlostDate <= DATEADD(DAY, 1, @ToDate)
-			AND d.CreateTime < @ToDateTimeGMT
-			AND d.FirstDeposit = 1
-			AND d.Status = 3 -- Approved
-			AND c.SiteId = @SiteId
-			AND c.IsTest = 0
-
+		
 		SELECT @ActiveUsers = COUNT(1)
 		FROM (
 			SELECT CustId
@@ -80,7 +70,7 @@ BEGIN
 				SELECT CustId
 				FROM dbo.TpTransferInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-					AND CreateTime >= @FromDateTimeGMT AND CreateTime < @ToDateTimeGMT
+					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND SiteId = @SiteId
 				GROUP BY CustId
 			) AS t
@@ -105,7 +95,7 @@ BEGIN
 				SELECT CustId
 				FROM dbo.TpTransferInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN DATEADD(DAY, -1, @CompareFromDate) AND DATEADD(DAY, 1, @CompareToDate)
-					AND CreateTime >= @CompareFromDateTimeGMT AND CreateTime < @CompareToDateTimeGMT
+					AND CreateTime >= @CompareFromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 					AND SiteId = @SiteId
 				GROUP BY CustId
 			) AS t
@@ -117,9 +107,9 @@ BEGIN
 
 	-- Return data
 	SELECT @TotalUsers AS TotalUsers
-			,@CompareTotalUsers AS CompareTotalUsers
+			,@UptoTotalUsers AS UptoTotalUsers
+			,@CompareUptoTotalUsers AS CompareUptoTotalUsers
 			,@PaidUsers	AS PaidUsers
-			,@ComparePaidUsers AS ComparePaidUsers
 			,@NewlyRegisterUsers AS NewlyRegisterUsers
 			,@CompareNewlyRegisterUsers AS CompareNewlyRegisterUsers
 			,@ActiveUsers AS ActiveUsers

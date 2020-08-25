@@ -15,30 +15,46 @@ AS
 
 	Revisions:
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
+		- 20200818@Percy: Support special date range [RedmineID: #137395]
 */
 
 BEGIN
 	SET NOCOUNT ON
 
+	DECLARE @SiteId INT
+
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 	DECLARE @TotalUsers INT, @TotalPaidUsers INT
 
 	BEGIN
+		SELECT @SiteId = SiteId
+		FROM dbo.ServerInfo s WITH (NOLOCK)
+			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
+		WHERE l.LicenseeId = @LicenseeId
+
 		SELECT @FromDate = CONVERT(DATE, @FromDate), @ToDate = CONVERT(DATE, @ToDate)
 
 		-- Data on GMT+0 --> convert timezone
 		SELECT @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
-		SELECT @TotalUsers = COUNT(1), @TotalPaidUsers = COUNT(d.CustId)
+		SELECT @TotalUsers = COUNT(1)
 		FROM dbo.Customer c WITH (NOLOCK)
-			LEFT JOIN dbo.DepositInfo d WITH (NOLOCK)
+		WHERE c.IsTest = 0
+			AND c.SiteId = @SiteId
+			AND c.RegTime <= DATEADD(DAY, 1, @ToDateTimeGMT)
+
+		SELECT @TotalPaidUsers = COUNT(d.CustId)
+		FROM dbo.Customer c WITH (NOLOCK)
+			INNER JOIN dbo.DepositInfo d WITH (NOLOCK)
 				ON		c.CustId = d.CustId
 					AND c.SiteId = d.SiteId
 					AND d.FirstDeposit = 1
 					AND d.Status = 3
 		WHERE c.IsTest = 0
-			AND c.RegTime <= @ToDateTimeGMT
+			AND c.SiteId = @SiteId
+			AND d.WinlostDate <= DATEADD(DAY, 1, @ToDate)
+			AND d.CreateTime <= DATEADD(DAY, 1, @ToDateTimeGMT)
 
 		CREATE TABLE #Products (ProductId INT)
 		INSERT INTO #Products (ProductId)
