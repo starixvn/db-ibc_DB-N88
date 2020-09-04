@@ -10,10 +10,11 @@ AS
 /*
 	Created: 20200713@Percy
 	DB: DBN88-bodb_N88
-	Task: MPA - Marketing Report - User's Activities
+	Task: MPA - Marketing Report - User Activity
 
 	Revisions:
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
+		- 20200818@Percy: Change output format of daily mode [RedmineID: #137395]
 
 	Param's Explanation:
 		. ViewBy:
@@ -42,7 +43,7 @@ BEGIN
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
 		INSERT INTO #UserActivities (WinlostDate, CustId, IsActive, IsNewlyRegister)
-		SELECT a.WinlostDate, a.CustId, 1, CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < @ToDateTimeGMT THEN 1 ELSE 0 END
+		SELECT a.WinlostDate, a.CustId, 1, CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE 0 END
 		FROM (
 			SELECT WinlostDate, CustId
 			FROM (
@@ -58,7 +59,7 @@ BEGIN
 				SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId
 				FROM dbo.TpTransferInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-					AND CreateTime >= @FromDateTimeGMT AND CreateTime < @ToDateTimeGMT
+					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND SiteId = @SiteId
 				GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId
 			) AS t
@@ -70,7 +71,7 @@ BEGIN
 		INSERT INTO #UserActivities (WinlostDate, CustId, IsActive, IsNewlyRegister)
 		SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, RegTime)), CustId, 0, 1
 		FROM dbo.Customer c WITH (NOLOCK)
-		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < @ToDateTimeGMT
+		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.IsTest = 0
 			AND c.SiteId = @SiteId
 			AND NOT EXISTS (SELECT 1 FROM #UserActivities u WHERE c.CustId = u.CustId)
@@ -87,7 +88,7 @@ BEGIN
 	)
 	SELECT
 		CASE @ViewBy
-			WHEN 1 THEN CONVERT(VARCHAR(10), w.WinlostDate, 101)
+			WHEN 1 THEN CONVERT(VARCHAR(6), w.WinlostDate, 106)
 			WHEN 2 THEN 'W'
 						+ RIGHT('00' + CONVERT(VARCHAR(2), DATEPART(WEEK, w.WinlostDate)), 2)
 						+ '/'
@@ -100,13 +101,17 @@ BEGIN
 	GROUP BY
 		DATEPART(YEAR, w.WinlostDate)
 		,CASE @ViewBy
-			WHEN 1 THEN CONVERT(VARCHAR(10), w.WinlostDate, 101)
+			WHEN 1 THEN CONVERT(VARCHAR(6), w.WinlostDate, 106)
 			WHEN 2 THEN 'W'
 						+ RIGHT('00' + CONVERT(VARCHAR(2), DATEPART(WEEK, w.WinlostDate)), 2)
 						+ '/'
 						+ CONVERT(VARCHAR(5), DATEPART(YEAR, w.WinlostDate))
 			END
-	ORDER BY DATEPART(YEAR, w.WinlostDate), ViewBy
+		,CASE WHEN @ViewBy = 1 THEN w.WinlostDate END
+	ORDER BY
+		DATEPART(YEAR, w.WinlostDate)
+		,CASE WHEN @ViewBy = 1 THEN w.WinlostDate END
+		,ViewBy
 	OPTION (MAXRECURSION 0)
 
 	DROP TABLE #UserActivities
