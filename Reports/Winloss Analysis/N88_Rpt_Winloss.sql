@@ -27,6 +27,7 @@ AS
 	Revisions:
 		- 20200508@Sol: Create new report [Redmine:#133254]
 		- 20200506@Sol: Remove IsTest column in N88_RptWinloss [RedmineID: #135372]
+		- 20200920@Sophia: Fix Issue Divide by zero error encountered [Redmine: #141991]
 		- 20200828@Percy: Support multiple brand [RedmineID: #140362]
 */
 
@@ -449,7 +450,7 @@ BEGIN
 		,AvgBetAmount
 		,BasedAvgBetAmount
 		,UniquePlayers
-		,(-1) * (CASE WHEN @IsDetailInOriginalCurr = 0 THEN BasedGGR/BasedTurnoverNoDraw ELSE GGR/TurnoverNoDraw END) * 100 AS Margin
+		,(-1) * (CASE WHEN @IsDetailInOriginalCurr = 0 THEN BasedGGR/NULLIF(BasedTurnoverNoDraw, 0) ELSE GGR/NULLIF(TurnoverNoDraw, 0) END) * 100 AS Margin
 	FROM #__FinalResult
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY [Group], CurrencyId
