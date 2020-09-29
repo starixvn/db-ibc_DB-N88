@@ -14,6 +14,7 @@ AS
 
 	Revisions:
 		- 20200915@Percy: Initialize SP [RedmineID: #141575]
+		- 20200928@Percy: Change way to calculate active users [RedmineID: #141575]
 */
 
 BEGIN
@@ -61,49 +62,36 @@ BEGIN
 		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
 
 		-- Active Users
-		CREATE TABLE #ActiveUsers (CustId INT, IsAll BIT, IsRange BIT)
-		INSERT INTO #ActiveUsers (CustId, IsAll, IsRange)
-		SELECT CustId, 1, 1
-		FROM (
-			SELECT CustId
-			FROM dbo.N88_RptWinloss WITH (NOLOCK)
-			WHERE TransDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-				AND TransDateGMT BETWEEN @FromDate AND @ToDate
-				AND TimeZone = @TimeZone
-				AND LicenseeId = @LicenseeId
-			GROUP BY CustId
+		SELECT @UptoActiveUsers = COUNT(1)
+		FROM dbo.Customer c WITH (NOLOCK)
+		WHERE c.SiteId = @SiteId
+			AND c.IsTest = 0
+			AND (
+				EXISTS (SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK) WHERE c.CustId = r.CustId)
+				OR EXISTS (SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) WHERE c.CustId = t.CustId)
+			)
 
-			UNION ALL
-			SELECT CustId
-			FROM dbo.TpTransferInfo WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-			GROUP BY CustId
-		) t
-		GROUP BY CustId
-
-		INSERT INTO #ActiveUsers (CustId, IsAll, IsRange)
-		SELECT CustId, 1, 0
-		FROM (
-			SELECT CustId
-			FROM dbo.N88_RptWinloss WITH (NOLOCK)
-			WHERE TransDate < DATEADD(DAY, -1, @FromDate)
-				AND TransDateGMT < @FromDate
-				AND TimeZone = @TimeZone
-				AND LicenseeId = @LicenseeId
-			GROUP BY CustId
-
-			UNION ALL
-			SELECT CustId
-			FROM dbo.TpTransferInfo WITH (NOLOCK)
-			WHERE WinlostDate < DATEADD(DAY, -1, @FromDate)
-				AND CreateTime < @FromDateTimeGMT
-				AND SiteId = @SiteId
-			GROUP BY CustId
-		) t
-		WHERE NOT EXISTS (SELECT 1 FROM #ActiveUsers a WHERE t.CustId = a.CustId)
-		GROUP BY CustId
+		SELECT @TotalActiveUsers = COUNT(1)
+		FROM dbo.Customer c WITH (NOLOCK)
+		WHERE c.SiteId = @SiteId
+			AND c.IsTest = 0
+			AND (
+				EXISTS (
+					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					WHERE c.CustId = r.CustId
+						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
+						AND r.TransDateGMT BETWEEN @FromDate AND @ToDate
+						AND r.TimeZone = @TimeZone
+						AND r.LicenseeId = @LicenseeId
+				)
+				OR EXISTS (
+					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
+					WHERE c.CustId = t.CustId
+						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
+						AND t.CreateTime >= @FromDateTimeGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND t.SiteId = @SiteId
+				)
+			)
 
 		-- Deposit
 		CREATE TABLE #DepositUsers (CustId INT, Deposit MONEY, FirstDeposit MONEY)
@@ -146,8 +134,6 @@ BEGIN
 		-- Main data
 		SELECT @UptoTotalUsers			= COUNT(1)
 				,@TotalUsers			= COUNT(CASE WHEN c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
-				,@UptoActiveUsers		= SUM(ISNULL(CONVERT(INT, a.IsAll), 0))
-				,@TotalActiveUsers		= SUM(ISNULL(CONVERT(INT, a.IsRange), 0))
 				,@UptoDepositUsers		= COUNT(CASE WHEN c.ActStatus = 2 THEN 1 ELSE NULL END)
 				,@TotalDepositUsers		= COUNT(CASE WHEN d.FirstDeposit = 0 THEN NULL ELSE d.CustId END)
 				,@NewlyRegisterUsers	= COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
@@ -156,7 +142,6 @@ BEGIN
 				,@TotalWithdrawal		= SUM(ISNULL(w.Withdrawal, 0))
 				,@TotalWithdrawalUsers	= COUNT(w.CustId)
 		FROM dbo.Customer c WITH (NOLOCK)
-			LEFT JOIN #ActiveUsers a ON c.CustId = a.CustId
 			LEFT JOIN #DepositUsers d ON c.CustId = d.CustId
 			LEFT JOIN #WithdrawalUsers w ON c.CustId = w.CustId
 		WHERE c.SiteId = @SiteId
@@ -169,7 +154,6 @@ BEGIN
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
 
-		DROP TABLE #ActiveUsers
 		DROP TABLE #DepositUsers
 		DROP TABLE #Exchange
 		DROP TABLE #WithdrawalUsers
@@ -183,7 +167,7 @@ BEGIN
 
 		-- Bonus Info
 		INSERT INTO @tempData (Name, DateRange, DataType)
-		SELECT 'No. of users claiming ' + b.BonusCode, COUNT(1) AS TotalUsers, 1
+		SELECT 'No. of users claiming ' + b.BonusCode, COUNT(DISTINCT b.CustId) AS TotalUsers, 1
 		FROM dbo.BonusInfo b WITH (NOLOCK)
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 		WHERE c.SiteId = @SiteId
