@@ -16,6 +16,7 @@ AS
 	Revisions:
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
 		- 20200818@Percy: Support special date range [RedmineID: #137395]
+		- 20200915@Percy: Recalculate total paid users (first deposit users) [RedmineID: #141575]
 */
 
 BEGIN
@@ -53,6 +54,13 @@ BEGIN
 		FROM dbo.Customer WITH (NOLOCK)
 		WHERE SiteId = @SiteId
 			AND IsTest = 0
+
+		SELECT @PaidUsers = @PaidUsers - COUNT(CASE WHEN c.ActStatus = 2 THEN 1 ELSE NULL END) + COUNT(d.CustId)
+		FROM dbo.Customer c WITH (NOLOCK)
+			LEFT JOIN dbo.DepositInfo d WITH (NOLOCK) ON c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
+		WHERE c.RegTime < '2020-08-15'
+			AND c.SiteId = @SiteId
+			AND c.IsTest = 0
 		
 		SELECT @ActiveUsers = COUNT(1)
 		FROM (
