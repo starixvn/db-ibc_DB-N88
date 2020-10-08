@@ -38,7 +38,7 @@ BEGIN
 			,@ActiveUsers INT, @CompareActiveUsers INT
 			,@DepositAmount MONEY, @CompareDepositAmount MONEY
 			,@WithdrawalAmount MONEY, @CompareWithdrawalAmount MONEY
-			,@BonusUsers INT, @CompareBonusUsers INT
+			,@BonusClaimeds INT, @CompareBonusClaimeds INT
 
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
@@ -153,13 +153,17 @@ BEGIN
 				AND w.Status = 6
 				AND c.IsTest = 0
 
-			SELECT @BonusUsers = COUNT(DISTINCT b.CustId)
-			FROM dbo.BonusInfo b WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND b.SiteId = @SiteId
-				AND c.IsTest = 0
+			SELECT @BonusClaimeds = COUNT(1)
+			FROM (
+				SELECT b.BonusCode, b.CustId
+				FROM dbo.BonusInfo b WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND b.SiteId = @SiteId
+					AND c.IsTest = 0
+				GROUP BY b.BonusCode, b.CustId
+			) b
 		END
 
 		-- Get data for compare
@@ -231,13 +235,17 @@ BEGIN
 				AND w.Status = 6
 				AND c.IsTest = 0
 
-			SELECT @CompareBonusUsers = COUNT(DISTINCT b.CustId)
-			FROM dbo.BonusInfo b WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-				AND b.SiteId = @SiteId
-				AND c.IsTest = 0
+			SELECT @CompareBonusClaimeds = COUNT(1)
+			FROM (
+				SELECT b.BonusCode, b.CustId
+				FROM dbo.BonusInfo b WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+					AND b.SiteId = @SiteId
+					AND c.IsTest = 0
+				GROUP BY b.BonusCode, b.CustId
+			) b
 		END
 	END
 
@@ -259,7 +267,7 @@ BEGIN
 			,@CompareDepositAmount AS CompareDepositAmount
 			,@WithdrawalAmount AS WithdrawalAmount
 			,@CompareWithdrawalAmount AS CompareWithdrawalAmount
-			,@BonusUsers AS BonusUsers
-			,@CompareBonusUsers AS CompareBonusUsers
+			,@BonusClaimeds AS BonusClaimeds
+			,@CompareBonusClaimeds AS CompareBonusClaimeds
 END
 GO

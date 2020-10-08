@@ -74,6 +74,26 @@ BEGIN
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
 
 		-- Detail by Campaign, User
+		CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, WinlostDate DATE, Amount MONEY)
+		INSERT INTO #DepositInfo (CustId, CurrencyId, WinlostDate, Amount)
+		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
+		FROM dbo.DepositInfo WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @FDate AND @TDate
+			AND SiteId = @SiteId
+			AND Status = 3
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
+		CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, WinlostDate DATE, Amount MONEY)
+		INSERT INTO #WithdrawalInfo (CustId, CurrencyId, WinlostDate, Amount)
+		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
+		FROM dbo.WithdrawalInfo WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @FDate AND @TDate
+			AND SiteId = @SiteId
+			AND Status = 6
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
 		SELECT RowId, BonusCode, UserName, RegTime, DepositAmount, WithdrawalAmount, BonusAmount 
 		FROM (
 			SELECT b.BonusCode, c.Username, DATEADD(HOUR, @TimeZone, c.RegTime) AS RegTime, d.DepositAmount, w.WithdrawalAmount, b.BonusAmount
@@ -105,26 +125,16 @@ BEGIN
 				OUTER APPLY
 				(
 					SELECT SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmount
-					FROM dbo.DepositInfo d WITH (NOLOCK)
-						INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
-							AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+					FROM #DepositInfo d
+						INNER JOIN #Exchange e ON d.WinlostDate BETWEEN e.FromDate AND e.ToDate AND d.CurrencyId = e.ExchangeId
 					WHERE c.CustId = d.CustId
-						AND d.WinlostDate BETWEEN @FDate AND @TDate
-						AND d.SiteId = @SiteId
-						AND d.Status = 3
-						AND d.CreateTime >= @FromDateTimeGMT AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				) d
 				OUTER APPLY
 				(
 					SELECT SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
-					FROM dbo.WithdrawalInfo w WITH (NOLOCK)
-						INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId
-							AND CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+					FROM #WithdrawalInfo w
+						INNER JOIN #Exchange e ON w.WinlostDate BETWEEN e.FromDate AND e.ToDate AND w.CurrencyId = e.ExchangeId
 					WHERE c.CustId = w.CustId
-						AND w.WinlostDate BETWEEN @FDate AND @TDate
-						AND w.SiteId = @SiteId
-						AND w.Status = 6
-						AND w.CreateTime >= @FromDateTimeGMT AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				) w
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
@@ -132,6 +142,8 @@ BEGIN
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 
 		DROP TABLE #Exchange
+		DROP TABLE #DepositInfo
+		DROP TABLE #WithdrawalInfo
 	END
 END
 GO

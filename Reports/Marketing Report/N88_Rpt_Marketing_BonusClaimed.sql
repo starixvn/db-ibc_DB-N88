@@ -29,7 +29,7 @@ BEGIN
 	DECLARE @FDate DATE, @TDate DATE
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
-	DECLARE @BonusUsers INT, @CompareBonusUsers INT
+	DECLARE @BonusClaimeds INT, @CompareBonusClaimeds INT
 
 	BEGIN
 		SELECT @SiteId = SiteId
@@ -44,53 +44,56 @@ BEGIN
 				,@CompareToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareToDate))
 
 		-- Total
-		SELECT @BonusUsers = COUNT(DISTINCT b.CustId)
-		FROM dbo.BonusInfo b WITH (NOLOCK)
-			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
-			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND b.SiteId = @SiteId
-			AND c.IsTest = 0
+		SELECT @BonusClaimeds = COUNT(1)
+		FROM (
+			SELECT b.CustId, b.BonusCode
+			FROM dbo.BonusInfo b WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+			WHERE b.WinlostDate BETWEEN @FDate AND @TDate
+				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND b.SiteId = @SiteId
+				AND c.IsTest = 0
+			GROUP BY b.CustId, b.BonusCode
+		) b
 
-		SELECT @CompareBonusUsers = COUNT(DISTINCT b.CustId)
-		FROM dbo.BonusInfo b WITH (NOLOCK)
-			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-		WHERE b.WinlostDate BETWEEN DATEADD(DAY, -1, @CompareFromDate) AND DATEADD(DAY, 1, @CompareToDate)
-			AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-			AND b.SiteId = @SiteId
-			AND c.IsTest = 0
+		SELECT @CompareBonusClaimeds = COUNT(1)
+		FROM (
+			SELECT b.CustId, b.BonusCode
+			FROM dbo.BonusInfo b WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+			WHERE b.WinlostDate BETWEEN DATEADD(DAY, -1, @CompareFromDate) AND DATEADD(DAY, 1, @CompareToDate)
+				AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+				AND b.SiteId = @SiteId
+				AND c.IsTest = 0
+			GROUP BY b.CustId, b.BonusCode
+		) b
 
-		SELECT @BonusUsers AS BonusUsers, @CompareBonusUsers AS CompareBonusUsers
+		SELECT @BonusClaimeds AS BonusClaimeds, @CompareBonusClaimeds AS CompareBonusClaimeds
 
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
 
 		-- Detail by Campaign
-		SELECT b.BonusCode, COUNT(DISTINCT b.CustId) AS BonusUsers, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+		CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, WinlostDate DATE, BonusCode VARCHAR(50), Amount MONEY)
+		INSERT INTO #BonusInfo (CustId, CurrencyId, WinlostDate, BonusCode, Amount)
+		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), BonusCode, SUM(BonusAmount)
+		FROM dbo.BonusInfo WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @FDate AND @TDate
+			AND SiteId = @SiteId
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), BonusCode
+
+		SELECT b.BonusCode, COUNT(DISTINCT b.CustId) AS BonusClaimeds, SUM(b.Amount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
 		FROM dbo.Customer c WITH (NOLOCK)
-			INNER JOIN dbo.BonusInfo b WITH (NOLOCK) ON c.CustId = b.CustId
-			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
-				AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
-			AND b.SiteId = @SiteId
-			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND c.IsTest = 0
+			INNER JOIN #BonusInfo b ON c.CustId = b.CustId
+			INNER JOIN #Exchange e ON b.WinlostDate BETWEEN e.FromDate AND e.ToDate AND b.CurrencyId = e.ExchangeId
+		WHERE c.IsTest = 0
 		GROUP BY b.BonusCode
 		ORDER BY b.BonusCode
 
-		-- Total
-		SELECT COUNT(DISTINCT b.CustId) AS TotalBonusUsers, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS TotalBonusAmount
-		FROM dbo.Customer c WITH (NOLOCK)
-			INNER JOIN dbo.BonusInfo b WITH (NOLOCK) ON c.CustId = b.CustId
-			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
-				AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
-			AND b.SiteId = @SiteId
-			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND c.IsTest = 0
-
 		DROP TABLE #Exchange
+		DROP TABLE #BonusInfo
 	END
 END
 GO

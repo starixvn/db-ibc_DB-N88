@@ -72,6 +72,16 @@ BEGIN
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
 
 		-- Detail by User
+		CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, WinlostDate DATE, Amount MONEY, BetCount INT)
+		INSERT INTO #WithdrawalInfo (CustId, CurrencyId, WinlostDate, Amount, BetCount)
+		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount), COUNT(1)
+		FROM dbo.WithdrawalInfo WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @FDate AND @TDate
+			AND SiteId = @SiteId
+			AND Status = 6
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
 		SELECT RowId, UserName, RegTime, BetCount, WithdrawalAmount
 		FROM (
 			SELECT c.UserName, DATEADD(HOUR, @Timezone, c.RegTime) AS RegTime, BetCount, WithdrawalAmount
@@ -87,15 +97,10 @@ BEGIN
 			FROM dbo.Customer c WITH (NOLOCK)
 				CROSS APPLY
 				(
-					SELECT COUNT(1) AS BetCount, SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
-					FROM dbo.WithdrawalInfo w WITH (NOLOCK)
-						INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId
-							AND CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+					SELECT SUM(BetCount) AS BetCount, SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
+					FROM #WithdrawalInfo w
+						INNER JOIN #Exchange e ON w.WinlostDate BETWEEN e.FromDate AND e.ToDate AND w.CurrencyId = e.ExchangeId
 					WHERE c.CustId = w.CustId
-						AND w.WinlostDate BETWEEN @FDate AND @TDate
-						AND w.SiteId = @SiteId
-						AND w.Status = 6
-						AND w.CreateTime >= @FromDateTimeGMT AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				) w
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
@@ -104,6 +109,7 @@ BEGIN
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 
 		DROP TABLE #Exchange
+		DROP TABLE #WithdrawalInfo
 	END
 END
 GO
