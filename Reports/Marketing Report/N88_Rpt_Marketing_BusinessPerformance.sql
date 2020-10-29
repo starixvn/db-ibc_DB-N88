@@ -38,7 +38,7 @@ BEGIN
 			,@ActiveUsers INT, @CompareActiveUsers INT
 			,@DepositAmount MONEY, @CompareDepositAmount MONEY
 			,@WithdrawalAmount MONEY, @CompareWithdrawalAmount MONEY
-			,@BonusAmountClaimeds INT, @CompareBonusAmountClaimeds INT
+			,@BonusAmountClaimeds MONEY, @CompareBonusAmountClaimeds MONEY
 
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 

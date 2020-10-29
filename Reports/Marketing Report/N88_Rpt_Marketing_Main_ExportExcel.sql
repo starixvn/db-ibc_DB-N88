@@ -362,11 +362,10 @@ BEGIN
 										WHEN 3 THEN 'www.bwing.com'
 										END
 
-		INSERT INTO @tempData (Name, NameVN)
-		VALUES (NULL, NULL), ('Registration Details', N'Trang đăng ký')
+		SELECT Name, NameVN, DateRange, MonthToDate, AllRange, DataType FROM @tempData
 
-		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
-		SELECT SignupUrl, SignupUrl, SignupUsers, MTD_SignupUsers, Total_SignupUsers, 1
+		-- Registration Details
+		SELECT SignupUrl, SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
 		FROM
 		(
 			SELECT CASE WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl ELSE cg.SignupUrl END AS SignupUrl
@@ -381,7 +380,5 @@ BEGIN
 		) t
 		WHERE SignupUrl IS NOT NULL
 	END
-
-	SELECT Name, NameVN, DateRange, MonthToDate, AllRange, DataType FROM @tempData
 END
 GO
