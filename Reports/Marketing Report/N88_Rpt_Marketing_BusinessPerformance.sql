@@ -38,7 +38,7 @@ BEGIN
 			,@ActiveUsers INT, @CompareActiveUsers INT
 			,@DepositAmount MONEY, @CompareDepositAmount MONEY
 			,@WithdrawalAmount MONEY, @CompareWithdrawalAmount MONEY
-			,@BonusClaimeds INT, @CompareBonusClaimeds INT
+			,@BonusAmountClaimeds INT, @CompareBonusAmountClaimeds INT
 
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
@@ -153,17 +153,15 @@ BEGIN
 				AND w.Status = 6
 				AND c.IsTest = 0
 
-			SELECT @BonusClaimeds = COUNT(1)
-			FROM (
-				SELECT b.BonusCode, b.CustId
-				FROM dbo.BonusInfo b WITH (NOLOCK)
-					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND b.SiteId = @SiteId
-					AND c.IsTest = 0
-				GROUP BY b.BonusCode, b.CustId
-			) b
+			SELECT @BonusAmountClaimeds = SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
+			FROM dbo.BonusInfo b WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
+					AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND b.SiteId = @SiteId
+				AND c.IsTest = 0
 		END
 
 		-- Get data for compare
@@ -235,17 +233,15 @@ BEGIN
 				AND w.Status = 6
 				AND c.IsTest = 0
 
-			SELECT @CompareBonusClaimeds = COUNT(1)
-			FROM (
-				SELECT b.BonusCode, b.CustId
-				FROM dbo.BonusInfo b WITH (NOLOCK)
-					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-					AND b.SiteId = @SiteId
-					AND c.IsTest = 0
-				GROUP BY b.BonusCode, b.CustId
-			) b
+			SELECT @CompareBonusAmountClaimeds = SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
+			FROM dbo.BonusInfo b WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
+					AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+				AND b.SiteId = @SiteId
+				AND c.IsTest = 0
 		END
 	END
 
@@ -267,7 +263,7 @@ BEGIN
 			,@CompareDepositAmount AS CompareDepositAmount
 			,@WithdrawalAmount AS WithdrawalAmount
 			,@CompareWithdrawalAmount AS CompareWithdrawalAmount
-			,@BonusClaimeds AS BonusClaimeds
-			,@CompareBonusClaimeds AS CompareBonusClaimeds
+			,@BonusAmountClaimeds AS BonusAmountClaimeds
+			,@CompareBonusAmountClaimeds AS CompareBonusAmountClaimeds
 END
 GO
