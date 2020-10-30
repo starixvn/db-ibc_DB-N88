@@ -16,6 +16,7 @@ AS
 
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
+		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 */
 
 BEGIN
@@ -76,7 +77,7 @@ BEGIN
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
-			SELECT @CompareBonusAmountClaimeds = SUM(BonusAmount)
+			SELECT @CompareBonusAmountClaimeds = SUM(BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
 			FROM (
 				SELECT b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)

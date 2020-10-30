@@ -19,6 +19,7 @@ AS
 		- 20200818@Percy: Support special date range [RedmineID: #137395]
 		- 20200915@Percy: Recalculate total paid users (first deposit users) [RedmineID: #141575]
 		- 20200928@Percy: Add Deposit Amount, Withdrawal Amount, Bonus Users [RedmineID: #141575]
+		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 */
 
 BEGIN

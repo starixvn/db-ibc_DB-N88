@@ -15,6 +15,7 @@ AS
 	Revisions:
 		- 20200915@Percy: Initialize SP [RedmineID: #141575]
 		- 20200928@Percy: Change way to calculate active users [RedmineID: #141575]
+		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 */
 
 BEGIN
@@ -23,7 +24,7 @@ BEGIN
 	DECLARE @SiteId INT
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 	DECLARE @BeginCurrentMonth DATETIME, @EndCurrentMonth DATETIME, @BeginCurrentMonthGMT DATETIME, @EndCurrentMonthGMT DATETIME
-	DECLARE @OfficialLaunchDate DATETIME
+	DECLARE @OfficialLaunchDate DATETIME, @OfficialLaunchDateGMT DATETIME
 
 	DECLARE @NoOfUsers						INT
 			,@MTD_NoOfUsers					INT
@@ -75,7 +76,7 @@ BEGIN
 										WHEN 2 THEN '2020-09-12' -- N8G
 										WHEN 3 THEN '2020-08-14' -- N8B
 										ELSE '1970-01-01' -- Get all
-										END
+										END -- GMT+8
 
 		SELECT @BeginCurrentMonth = DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)
 		SELECT @EndCurrentMonth = DATEADD(DAY, -1, DATEADD(MONTH, 1, @BeginCurrentMonth))
@@ -85,9 +86,10 @@ BEGIN
 				,@ToDateTimeGMT			= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 				,@BeginCurrentMonthGMT	= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @BeginCurrentMonth))
 				,@EndCurrentMonthGMT	= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @EndCurrentMonth))
+				,@OfficialLaunchDateGMT	= DATEADD(HOUR, -8, @OfficialLaunchDate) -- GMT+8
 
 		DECLARE @FDate DATE, @TDate DATE
-		SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
+		SELECT  @FDate = '2019-12-31', @TDate = DATEADD(DAY, 1, CONVERT(DATE, GETDATE()))
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId TINYINT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
@@ -140,14 +142,15 @@ BEGIN
 			)
 
 		-- Deposit
-		CREATE TABLE #DepositUsers (CustId INT, Deposit MONEY, FirstDeposit MONEY, IsDateRange TINYINT, IsMTD TINYINT)
-		INSERT INTO #DepositUsers (CustId, Deposit, FirstDeposit, IsDateRange, IsMTD)
+		CREATE TABLE #DepositUsers (CustId INT, Deposit MONEY, FirstDeposit MONEY, IsDateRange TINYINT, IsMTD TINYINT, IsAll TINYINT)
+		INSERT INTO #DepositUsers (CustId, Deposit, FirstDeposit, IsDateRange, IsMTD, IsAll)
 		SELECT
 			d.CustId
 			,SUM(d.Deposit * e.Rate)
 			,SUM(d.FirstDeposit * e.Rate)
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate
@@ -170,15 +173,17 @@ BEGIN
 			d.CustId
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 
 		-- Withdrawal
-		CREATE TABLE #WithdrawalUsers (CustId INT, Withdrawal MONEY, IsDateRange TINYINT, IsMTD TINYINT)
-		INSERT INTO #WithdrawalUsers (CustId, Withdrawal, IsDateRange, IsMTD)
+		CREATE TABLE #WithdrawalUsers (CustId INT, Withdrawal MONEY, IsDateRange TINYINT, IsMTD TINYINT, IsAll TINYINT)
+		INSERT INTO #WithdrawalUsers (CustId, Withdrawal, IsDateRange, IsMTD, IsAll)
 		SELECT
 			d.CustId
 			,SUM(d.Withdrawal * e.Rate)
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate
@@ -200,13 +205,14 @@ BEGIN
 			d.CustId
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 
 		-- Bonus
 		CREATE TABLE #BonusUsers (CustId INT, BonusCode VARCHAR(20), BonusClaimed MONEY, IsDateRange TINYINT, IsMTD TINYINT)
 			-- Date range
 			INSERT INTO #BonusUsers (CustId, BonusCode, BonusClaimed, IsDateRange, IsMTD)
 			SELECT b.CustId, b.BonusCode
-				,SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
+				,SUM(b.BonusAmount * e.Rate)
 				,1 AS IsDateRange
 				,0 AS IsMTD
 			FROM dbo.BonusInfo b WITH (NOLOCK)
@@ -220,21 +226,21 @@ BEGIN
 			-- Month to date
 			INSERT INTO #BonusUsers (CustId, BonusCode, BonusClaimed, IsDateRange, IsMTD)
 			SELECT b.CustId, b.BonusCode
-				,SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
+				,SUM(b.BonusAmount * e.Rate)
 				,0 AS IsDateRange
 				,1 AS IsMTD
 			FROM dbo.BonusInfo b WITH (NOLOCK)
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
 					AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
 			WHERE b.SiteId = @SiteId
-				AND b.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND b.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
+				AND b.CreateTime >= @BeginCurrentMonthGMT AND b.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
 			GROUP BY b.CustId, b.BonusCode
 
 		-- Main data
 		SELECT
-			@NoOfUsers						= COUNT(CASE WHEN c.RegTime > @OfficialLaunchDate		AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)			THEN 1 ELSE NULL END)
-			,@MTD_NoOfUsers					= COUNT(CASE WHEN c.RegTime > @BeginCurrentMonthGMT		AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)	THEN 1 ELSE NULL END)
+			@NoOfUsers						= COUNT(CASE WHEN c.RegTime > @OfficialLaunchDateGMT	AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)			THEN 1 ELSE NULL END)
+			,@MTD_NoOfUsers					= COUNT(CASE WHEN c.RegTime > @OfficialLaunchDateGMT	AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)	THEN 1 ELSE NULL END)
 			,@NewlyRegisterUsers			= COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT			AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)			THEN 1 ELSE NULL END)
 			,@MTD_NewlyRegisterUsers		= COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT	AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)	THEN 1 ELSE NULL END)
 			,@BonusClaimedAmount			= SUM(ISNULL(b.BonusClaimed, 0))
@@ -269,29 +275,29 @@ BEGIN
 			) b
 			OUTER APPLY (
 				SELECT
-					 SUM(d.IsDateRange) AS DepositUsers
-					,SUM(d.IsMTD)		AS MTD_DepositUsers
-					,SUM(1)				AS Total_NoOfDepositUsers
+					 COUNT(DISTINCT CASE WHEN d.IsDateRange = 1 THEN d.CustId ELSE NULL END)	AS DepositUsers
+					,COUNT(DISTINCT CASE WHEN d.IsMTD = 1 THEN d.CustId ELSE NULL END)			AS MTD_DepositUsers
+					,COUNT(DISTINCT CASE WHEN d.IsAll = 1 THEN d.CustId ELSE NULL END)			AS Total_NoOfDepositUsers
 					,SUM(d.Deposit * d.IsDateRange) AS DepositAmount
 					,SUM(d.Deposit * d.IsMTD)		AS MTD_DepositAmount
-					,SUM(d.Deposit)					AS Total_DepositAmount
+					,SUM(d.Deposit * d.IsAll)		AS Total_DepositAmount
 					,SUM(CASE WHEN d.FirstDeposit <> 0 THEN 1 ELSE 0 END * d.IsDateRange)	AS FirstDepositUsers
 					,SUM(CASE WHEN d.FirstDeposit <> 0 THEN 1 ELSE 0 END * d.IsMTD)			AS MTD_FirstDepositUsers
-					,SUM(CASE WHEN d.FirstDeposit <> 0 THEN 1 ELSE 0 END)					AS Total_FirstDepositUsers
+					,SUM(CASE WHEN d.FirstDeposit <> 0 THEN 1 ELSE 0 END * d.IsAll)			AS Total_FirstDepositUsers
 					,SUM(d.FirstDeposit * d.IsDateRange)	AS FirstDepositAmount
 					,SUM(d.FirstDeposit * d.IsMTD)			AS MTD_FirstDepositAmount
-					,SUM(d.FirstDeposit)					AS Total_FirstDepositAmount
+					,SUM(d.FirstDeposit * d.IsAll)			AS Total_FirstDepositAmount
 				FROM #DepositUsers d
 				WHERE d.CustId = c.CustId
 			) d
 			OUTER APPLY (
 				SELECT
-					 SUM(w.IsDateRange) AS WithdrawalUsers
-					,SUM(w.IsMTD)		AS MTD_WithdrawalUsers
-					,SUM(1)				AS Total_WithdrawalUsers
+					 COUNT(DISTINCT CASE WHEN w.IsDateRange = 1 THEN w.CustId ELSE NULL END)	AS WithdrawalUsers
+					,COUNT(DISTINCT CASE WHEN w.IsMTD = 1 THEN w.CustId ELSE NULL END)			AS MTD_WithdrawalUsers
+					,COUNT(DISTINCT CASE WHEN w.IsAll = 1 THEN w.CustId ELSE NULL END)			AS Total_WithdrawalUsers
 					,SUM(w.Withdrawal * w.IsDateRange)	AS WithdrawalAmount
 					,SUM(w.Withdrawal * w.IsMTD)		AS MTD_WithdrawalAmount
-					,SUM (w.Withdrawal)					AS Total_WithdrawalAmount
+					,SUM (w.Withdrawal * w.IsAll)		AS Total_WithdrawalAmount
 				FROM #WithdrawalUsers w
 				WHERE w.CustId = c.CustId
 			) w
@@ -300,7 +306,7 @@ BEGIN
 
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
 		VALUES
-			('Total Users'					, N'Tổng user hiện có'	, @NoOfUsers			, @MTD_NoOfUsers			, 0 , 1)
+			('Total Users'					, N'Tổng khách hiện có'	, @NoOfUsers			, @MTD_NoOfUsers			, 0 , 1)
 			,('NRU - Newly Registered Users', N'Số khách mới'		, @NewlyRegisterUsers	, @MTD_NewlyRegisterUsers	, 0 , 1)
 			,('Active Users'				, N'Số khách có cược'	, @ActiveUsers			, @MTD_ActiveUsers			, 0 , 1)
 		
@@ -366,7 +372,7 @@ BEGIN
 			SELECT CASE WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl ELSE cg.SignupUrl END AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
-				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDate THEN 1 ELSE NULL END) AS Total_SignupUsers
+				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
 			FROM dbo.Customer c WITH (NOLOCK)
 				LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON cg.CustId = c.CustId
 			WHERE c.SiteId = @SiteId
