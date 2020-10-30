@@ -26,7 +26,7 @@ BEGIN
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
-	DECLARE @BonusAmountClaimeds INT, @CompareBonusAmountClaimeds INT
+	DECLARE @BonusAmountClaimeds MONEY, @CompareBonusAmountClaimeds MONEY
 	CREATE TABLE #BonusInfo (BonusCode VARCHAR(50), BonusClaimeds INT, BonusAmount MONEY)
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
@@ -76,7 +76,7 @@ BEGIN
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
-			SELECT @BonusAmountClaimeds = SUM(BonusAmount)
+			SELECT @CompareBonusAmountClaimeds = SUM(BonusAmount)
 			FROM (
 				SELECT b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)

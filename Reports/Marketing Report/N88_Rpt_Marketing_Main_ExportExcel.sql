@@ -298,13 +298,6 @@ BEGIN
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
 
-		SELECT  @Total_NoOfDepositUsers = @Total_NoOfDepositUsers - COUNT(CASE WHEN c.ActStatus = 2 THEN 1 ELSE NULL END) + COUNT(d.CustId) 
-		FROM dbo.Customer c WITH (NOLOCK)
-			LEFT JOIN dbo.DepositInfo d WITH (NOLOCK) ON c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
-		WHERE c.RegTime < '2020-08-15'
-			AND c.SiteId = @SiteId
-			AND c.IsTest = 0
-
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
 		VALUES
 			('Total Users'					, N'Tổng user hiện có'	, @NoOfUsers			, @MTD_NoOfUsers			, 0 , 1)
@@ -355,6 +348,8 @@ BEGIN
 
 			,('CR - Churn Rate'					, N'Tỉ lệ người rời bỏ chơi'	, @CR, @MTD_CR, 0, 3)
 			,('RR - Retention Rate'				, N'Tỉ lệ giữ chân người chơi'	, @RR, @MTD_RR, 0, 3)
+
+		INSERT INTO @tempData (Name) VALUES (NULL) -- support web a line in excel
 
 		-- Signup url
 		DECLARE @DefaultSignupUrl VARCHAR(200)
