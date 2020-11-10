@@ -16,20 +16,20 @@ AS
 
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
+		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 */
 
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT
+	DECLARE @SiteId INT, @tmpFromDate DATE, @tmpToDate DATE
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
-	DECLARE @FDate DATE, @TDate DATE
-	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
-
-	DECLARE @BonusClaimeds INT, @CompareBonusClaimeds INT
+	DECLARE @BonusAmountClaimeds MONEY, @CompareBonusAmountClaimeds MONEY
+	CREATE TABLE #BonusInfo (BonusCode VARCHAR(50), BonusClaimeds INT, BonusAmount MONEY)
+	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
 	BEGIN
 		SELECT @SiteId = SiteId
@@ -43,54 +43,59 @@ BEGIN
 				,@CompareFromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareFromDate))
 				,@CompareToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareToDate))
 
-		-- Total
-		SELECT @BonusClaimeds = COUNT(1)
-		FROM (
-			SELECT b.CustId, b.BonusCode
-			FROM dbo.BonusInfo b WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-			WHERE b.WinlostDate BETWEEN @FDate AND @TDate
-				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND b.SiteId = @SiteId
-				AND c.IsTest = 0
-			GROUP BY b.CustId, b.BonusCode
-		) b
+		-- Get data
+		BEGIN
+			SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
+			
+			DELETE #Exchange
+			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
+			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
-		SELECT @CompareBonusClaimeds = COUNT(1)
-		FROM (
-			SELECT b.CustId, b.BonusCode
-			FROM dbo.BonusInfo b WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-			WHERE b.WinlostDate BETWEEN DATEADD(DAY, -1, @CompareFromDate) AND DATEADD(DAY, 1, @CompareToDate)
-				AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-				AND b.SiteId = @SiteId
-				AND c.IsTest = 0
-			GROUP BY b.CustId, b.BonusCode
-		) b
+			INSERT INTO #BonusInfo (BonusCode, BonusClaimeds, BonusAmount)
+			SELECT b.BonusCode, COUNT(DISTINCT b.CustId) AS BonusClaimeds, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+			FROM (
+				SELECT b.BonusCode, b.CustId, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
+				FROM dbo.BonusInfo b WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND b.SiteId = @SiteId
+					AND c.IsTest = 0
+				GROUP BY b.BonusCode, b.CustId, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			) b
+				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY b.BonusCode
 
-		SELECT @BonusClaimeds AS BonusClaimeds, @CompareBonusClaimeds AS CompareBonusClaimeds
+			SELECT @BonusAmountClaimeds = SUM(BonusAmount) FROM #BonusInfo
+		END
 
-		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		-- Get data for compare
+		BEGIN
+			SELECT @tmpFromDate = DATEADD(DAY, -1, @CompareFromDate), @tmpToDate = DATEADD(DAY, 1, @CompareToDate)
+			
+			DELETE #Exchange
+			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
+			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
-		-- Detail by Campaign
-		CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, WinlostDate DATE, BonusCode VARCHAR(50), Amount MONEY)
-		INSERT INTO #BonusInfo (CustId, CurrencyId, WinlostDate, BonusCode, Amount)
-		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), BonusCode, SUM(BonusAmount)
-		FROM dbo.BonusInfo WITH (NOLOCK)
-		WHERE WinlostDate BETWEEN @FDate AND @TDate
-			AND SiteId = @SiteId
-			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), BonusCode
+			SELECT @CompareBonusAmountClaimeds = SUM(BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
+			FROM (
+				SELECT b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
+				FROM dbo.BonusInfo b WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+					AND b.SiteId = @SiteId
+					AND c.IsTest = 0
+				GROUP BY b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			) b
+				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		END
 
-		SELECT b.BonusCode, COUNT(DISTINCT b.CustId) AS BonusClaimeds, SUM(b.Amount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
-		FROM dbo.Customer c WITH (NOLOCK)
-			INNER JOIN #BonusInfo b ON c.CustId = b.CustId
-			INNER JOIN #Exchange e ON b.WinlostDate BETWEEN e.FromDate AND e.ToDate AND b.CurrencyId = e.ExchangeId
-		WHERE c.IsTest = 0
-		GROUP BY b.BonusCode
-		ORDER BY b.BonusCode
+		SELECT @BonusAmountClaimeds AS BonusAmountClaimeds, @CompareBonusAmountClaimeds AS CompareBonusAmountClaimeds
+
+		SELECT BonusCode, BonusClaimeds, BonusAmount
+		FROM #BonusInfo
+		ORDER BY BonusCode
 
 		DROP TABLE #Exchange
 		DROP TABLE #BonusInfo
