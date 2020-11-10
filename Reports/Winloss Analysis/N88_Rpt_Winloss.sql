@@ -1,5 +1,5 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
-ALTER PROCEDURE dbo.N88_Rpt_Winloss
+ALTER PROCEDURE [dbo].[N88_Rpt_Winloss]
 	@LicenseeIds				VARCHAR(MAX)
 	,@FilterBy					TINYINT
 	,@GroupBy					TINYINT
@@ -29,6 +29,7 @@ AS
 		- 20200506@Sol: Remove IsTest column in N88_RptWinloss [RedmineID: #135372]
 		- 20200920@Sophia: Fix Issue Divide by zero error encountered [Redmine: #141991]
 		- 20200828@Percy: Support multiple brand [RedmineID: #140362]
+		- 20201110@Percy: Enhance code get exchange to improve performance [RedmineID: #144972]
 */
 
 BEGIN
@@ -66,6 +67,8 @@ BEGIN
 	)
 
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE CLUSTERED INDEX #__Exchange ON #__Exchange (ExchangeId, FromDate)
+	
 	DECLARE @MinDate DATE, @MaxDate DATE
 	
 	---- by winlostdate
@@ -73,7 +76,8 @@ BEGIN
 	BEGIN
 		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+			INNER JOIN @Currencies c ON e.ExchangeId = c.Currency
 
 		INSERT INTO #__N88_RptWinloss
 		(
@@ -139,7 +143,8 @@ BEGIN
 
 		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '')
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
+			INNER JOIN @Currencies c ON e.ExchangeId = c.Currency
 
 		INSERT INTO #__N88_RptWinloss
 		(
