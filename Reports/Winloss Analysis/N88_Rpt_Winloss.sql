@@ -198,6 +198,7 @@ BEGIN
 	CREATE TABLE #__tmpResult 
 	(
 		[Group]					VARCHAR(500)
+		,CustId					INT
 		,SabaId					VARCHAR(50)
 		,SabaSystemId			VARCHAR(50)
 		,CurrencyId				INT
@@ -352,6 +353,7 @@ BEGIN
 		INSERT INTO #__tmpResult
 		(
 			[Group]
+			,CustId
 			,SabaId
 			,SabaSystemId
 			,CurrencyId
@@ -369,6 +371,7 @@ BEGIN
 		)
 		SELECT 
 			c.UserName
+			,c.CustId
 			,c.TpUserName
 			,c.TpSystemUserName
 			,c.CurrencyId
@@ -413,7 +416,7 @@ BEGIN
 
 	INSERT INTO #__FinalResult
 	SELECT 
-		DENSE_RANK() OVER(ORDER BY [Group]) RowNumber,
+		DENSE_RANK() OVER(ORDER BY [Group] + CASE WHEN @GroupBy = 5 THEN CONVERT(VARCHAR(20), CustId) ELSE '' END) RowNumber,
 		[Group]
 		,SabaId
 		,SabaSystemId
