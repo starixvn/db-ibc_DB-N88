@@ -395,6 +395,7 @@ BEGIN
 	(
 		RowNumber				INT
 		,[Group]				VARCHAR(500)
+		,CustId					INT
 		,SabaId					VARCHAR(50)
 		,SabaSystemId			VARCHAR(50)
 		,CurrencyId				INT
@@ -418,6 +419,7 @@ BEGIN
 	SELECT 
 		DENSE_RANK() OVER(ORDER BY [Group] + CASE WHEN @GroupBy = 5 THEN CONVERT(VARCHAR(20), CustId) ELSE '' END) RowNumber,
 		[Group]
+		,CustId
 		,SabaId
 		,SabaSystemId
 		,CurrencyId
@@ -441,6 +443,7 @@ BEGIN
 
 	SELECT RowNumber,
 		[Group]
+		,CustId
 		,SabaId
 		,SabaSystemId
 		,CurrencyId
