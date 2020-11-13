@@ -1,5 +1,5 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
-ALTER PROCEDURE dbo.N88_Rpt_Winloss
+ALTER PROCEDURE [dbo].[N88_Rpt_Winloss]
 	@LicenseeIds				VARCHAR(MAX)
 	,@FilterBy					TINYINT
 	,@GroupBy					TINYINT
@@ -29,6 +29,7 @@ AS
 		- 20200506@Sol: Remove IsTest column in N88_RptWinloss [RedmineID: #135372]
 		- 20200920@Sophia: Fix Issue Divide by zero error encountered [Redmine: #141991]
 		- 20200828@Percy: Support multiple brand [RedmineID: #140362]
+		- 20201110@Percy: Enhance code get exchange to improve performance [RedmineID: #144972]
 */
 
 BEGIN
@@ -38,18 +39,6 @@ BEGIN
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
 	-- 1. Get raw data
-	DECLARE @Licensees TABLE (LicenseeId INT)
-	INSERT INTO @Licensees (LicenseeId)
-	SELECT val FROM bodb02.dbo.strSplit(@LicenseeIds, ',')
-
-	DECLARE @Products TABLE (ProductId INT)
-	INSERT INTO @Products (ProductId)
-	SELECT val FROM bodb02.dbo.strSplit(@ProductIds, ',')
-
-	DECLARE @Currencies TABLE (Currency INT)
-	INSERT INTO @Currencies (Currency)
-	SELECT val FROM bodb02.dbo.strSplit(@CurrencyIds, ',')
-
 	CREATE TABLE #__N88_RptWinloss
 	(
 		rptDate					DATE
@@ -64,8 +53,11 @@ BEGIN
 		,BasedTurnoverNoDraw	MONEY
 		,BasedWinloss			MONEY
 	)
+	CREATE CLUSTERED INDEX CIX_N88_RptWinloss ON #__N88_RptWinloss (CustId)
 
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
+	
 	DECLARE @MinDate DATE, @MaxDate DATE
 	
 	---- by winlostdate
@@ -73,7 +65,8 @@ BEGIN
 	BEGIN
 		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		INSERT INTO #__N88_RptWinloss
 		(
@@ -104,9 +97,9 @@ BEGIN
 			WHERE r.WinlostDate BETWEEN @FDate AND @TDate
 				AND r.WinlostDateGMT BETWEEN @FromDate AND @ToDate
 				AND r.TimeZone = @TimeZone
-				AND r.LicenseeId IN (SELECT LicenseeId FROM @Licensees)
-				AND r.GameType IN (SELECT ProductId FROM @Products)
-				AND r.Currency IN (SELECT Currency FROM @Currencies)
+				AND ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.LicenseeId) + ',%'
+				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND 1 = 
 						CASE 
 							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2) THEN 1
@@ -139,7 +132,8 @@ BEGIN
 
 		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '')
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		INSERT INTO #__N88_RptWinloss
 		(
@@ -170,9 +164,9 @@ BEGIN
 			WHERE r.TransDate BETWEEN @FDate AND @TDate
 				AND r.TransDateGMT BETWEEN @FromDate AND @ToDate
 				AND r.TimeZone = @TimeZone
-				AND r.LicenseeId IN (SELECT LicenseeId FROM @Licensees)
-				AND r.GameType IN (SELECT ProductId FROM @Products)
-				AND r.Currency IN (SELECT Currency FROM @Currencies)
+				AND ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.LicenseeId) + ',%'
+				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND 1 = 
 						CASE 
 							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2) THEN 1
@@ -204,6 +198,7 @@ BEGIN
 	CREATE TABLE #__tmpResult 
 	(
 		[Group]					VARCHAR(500)
+		,CustId					INT
 		,SabaId					VARCHAR(50)
 		,SabaSystemId			VARCHAR(50)
 		,CurrencyId				INT
@@ -343,9 +338,22 @@ BEGIN
 	-- by player
 	ELSE IF (@GroupBy = 5)
 	BEGIN
-		INSERT INTO #__tmpResult 
+		WITH CTE_Result AS (
+			SELECT CustId
+				,TurnOver = SUM(TurnOver)
+				,TurnoverNoDraw = SUM(TurnoverNoDraw)
+				,BasedTurnOver = SUM(BasedTurnOver)
+				,BasedTurnoverNoDraw = SUM(BasedTurnoverNoDraw)
+				,Winloss = SUM(Winloss)
+				,BasedWinloss = SUM(BasedWinloss)
+				,BetCount = SUM(BetCount)
+			FROM #__N88_RptWinloss
+			GROUP BY CustId
+		)
+		INSERT INTO #__tmpResult
 		(
 			[Group]
+			,CustId
 			,SabaId
 			,SabaSystemId
 			,CurrencyId
@@ -363,27 +371,23 @@ BEGIN
 		)
 		SELECT 
 			c.UserName
+			,c.CustId
 			,c.TpUserName
 			,c.TpSystemUserName
-			,r.CurrencyId
-			,SUM(TurnOver) 
-			,SUM(TurnoverNoDraw)
-			,SUM(BasedTurnOver)
-			,SUM(BasedTurnoverNoDraw)
-			,SUM(Winloss)
-			,SUM(BasedWinloss)
-			,SUM(BetCount)
-			,CAST(ISNULL(SUM(TurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
-			,CAST(ISNULL(SUM(BasedTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
-			,COUNT(DISTINCT r.CustId) AS UniquePlayers
-			,CAST(ISNULL(SUM(Winloss)/NULLIF(SUM(TurnOverNoDraw),0),0) AS MONEY) * 100 AS Margin
-		FROM #__N88_RptWinloss r
+			,c.CurrencyId
+			,r.TurnOver
+			,r.TurnoverNoDraw
+			,r.BasedTurnOver
+			,r.BasedTurnoverNoDraw
+			,r.Winloss
+			,r.BasedWinloss
+			,r.BetCount
+			,CASE WHEN BetCount = 0 THEN 0 ELSE TurnOver/BetCount END
+			,CASE WHEN BetCount = 0 THEN 0 ELSE BasedTurnOver/BetCount END
+			,1 AS UniquePlayers
+			,CASE WHEN TurnOverNoDraw = 0 THEN 0 ELSE Winloss/TurnOverNoDraw * 100 END
+		FROM CTE_Result r
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
-		GROUP BY
-			c.UserName
-			,c.TpUserName
-			,c.TpSystemUserName
-			,r.CurrencyId
 	END
 
 	-- 3. Final result
@@ -391,6 +395,7 @@ BEGIN
 	(
 		RowNumber				INT
 		,[Group]				VARCHAR(500)
+		,CustId					INT
 		,SabaId					VARCHAR(50)
 		,SabaSystemId			VARCHAR(50)
 		,CurrencyId				INT
@@ -412,8 +417,9 @@ BEGIN
 
 	INSERT INTO #__FinalResult
 	SELECT 
-		DENSE_RANK() OVER(ORDER BY [Group]) RowNumber,
+		DENSE_RANK() OVER(ORDER BY [Group] + CASE WHEN @GroupBy = 5 THEN CONVERT(VARCHAR(20), CustId) ELSE '' END) RowNumber,
 		[Group]
+		,CustId
 		,SabaId
 		,SabaSystemId
 		,CurrencyId
@@ -437,6 +443,7 @@ BEGIN
 
 	SELECT RowNumber,
 		[Group]
+		,CustId
 		,SabaId
 		,SabaSystemId
 		,CurrencyId
