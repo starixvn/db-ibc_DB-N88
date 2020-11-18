@@ -1,9 +1,11 @@
 ﻿/*<info serverAlias="DBN88POL-N88_UserControl" executers="bodbAdminNet,bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
 
-ALTER PROCEDURE [dbo].[N88_User_Update] @UserId INT
+ALTER PROCEDURE [dbo].[N88_User_Update]
+	@UserId INT
 	,@FirstName NVARCHAR(50) = NULL
 	,@LastName NVARCHAR(50) = NULL
 	,@Email NVARCHAR(50) = NULL
+	,@DefaultBaseCurrencyId INT = NULL
 	,@GroupId SMALLINT
 	,@CurrentUserId INT
 	,@CurrentSiteId TINYINT
@@ -13,6 +15,7 @@ ALTER PROCEDURE [dbo].[N88_User_Update] @UserId INT
 	,@ErrCode INT = 0 OUTPUT
 	,@ErrMsg NVARCHAR(1000) = '' OUTPUT
 AS
+
 /*
 	Created: 20200314@Kos
 	Task: Update user info
@@ -20,6 +23,7 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20201118@Kos: Support default base currency [RedmineID: #145346]
 
 	Param's Explanation:
 		• @UserId: UserId from table Users
@@ -34,8 +38,11 @@ AS
 					<row item="FirstName" alias="f" />
 					<row item="LastName" alias="l" />
 					<row item="Email" alias="e" />
+					<row item="DefaultBaseCurrencyId" alias="bc" />
+					<row item="DefaultBaseCurrencyCode" alias="bcc" />
 				</root>
 */
+
 BEGIN
 	SET NOCOUNT ON
 
@@ -56,8 +63,11 @@ BEGIN
 				,u.FirstName AS '@f'
 				,u.LastName AS '@l'
 				,u.Email AS '@e'
+				,u.DefaultBaseCurrencyId AS '@bc'
+				,e.Code AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
+				INNER JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
 			WHERE u.UserId = @UserId
 			FOR XML PATH('r')
 				,TYPE
@@ -89,9 +99,11 @@ BEGIN
 
 	-- Update customer information
 	UPDATE dbo.N88_Users WITH (ROWLOCK, UPDLOCK)
-	SET FirstName = @FirstName
-		,LastName = @LastName
-		,Email = @Email
+	SET
+		FirstName = @FirstName,
+		LastName = @LastName,
+		Email = @Email,
+		DefaultBaseCurrencyId = @DefaultBaseCurrencyId
 	WHERE UserId = @UserId
 
 	-- Write log after update
@@ -103,8 +115,11 @@ BEGIN
 				,u.FirstName AS '@f'
 				,u.LastName AS '@l'
 				,u.Email AS '@e'
+				,u.DefaultBaseCurrencyId AS '@bc'
+				,e.Code AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
+				INNER JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
 			WHERE u.UserId = @UserId
 			FOR XML PATH('r')
 				,TYPE
@@ -125,5 +140,4 @@ BEGIN
 		,@OldData = @logSPDataOld
 		,@Duration = @Duration
 END
-
 GO

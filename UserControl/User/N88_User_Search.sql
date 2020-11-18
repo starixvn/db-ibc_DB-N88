@@ -19,6 +19,7 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20201118@Kos: Support default base currency [RedmineID: #145346]
 
 	Param's Explanation:
 		- @Environment: UAT or LIVE
@@ -48,7 +49,8 @@ BEGIN
 	SELECT u.UserId
 		,u.username
 	FROM dbo.N88_Users AS u WITH (NOLOCK)
-	WHERE (@GroupId = 0 OR u.GroupId = @GroupId ) AND (@Username IS NULL OR @Username = '' OR u.Username LIKE '%' + REPLACE(REPLACE(@Username, '_', '\_'), '%', '\%') + '%'  ESCAPE '\')
+	WHERE (@GroupId = 0 OR u.GroupId = @GroupId )
+		AND (@Username IS NULL OR @Username = '' OR u.Username LIKE '%' + REPLACE(REPLACE(@Username, '_', '\_'), '%', '\%') + '%'  ESCAPE '\')
 
 	DECLARE @UserSite TABLE (
 		UserId INT
@@ -108,7 +110,7 @@ BEGIN
 		SET @TotalRows = (
 				SELECT DISTINCT COUNT(1)
 				FROM @Users AS u
-				INNER JOIN @UserSite AS us ON u.UserId = us.UserId
+					INNER JOIN @UserSite AS us ON u.UserId = us.UserId
 				WHERE (
 						@SiteId = 0
 						AND NOT EXISTS (
@@ -215,9 +217,11 @@ BEGIN
 				THEN 2
 			
 			END AS [Status]
-		,u.firstname
-		,u.lastname
-		,u.email
+		,u.FirstName
+		,u.LastName
+		,u.Email
+		,u.DefaultBaseCurrencyId
+		,e.Code AS DefaultBaseCurrencyCode
 		,u.userpwd
 		,us.LastLoginDate
 		,u.CreatedDate
@@ -243,7 +247,7 @@ BEGIN
 		LEFT JOIN dbo.N88_Users AS c3 WITH (NOLOCK) ON us.CreatedBy = c3.UserId
 		LEFT JOIN dbo.N88_Users AS c4 WITH (NOLOCK) ON us.ModifiedBy = c4.UserId
 		LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON tmp.SiteId = s.SiteId
+		LEFT JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
 	ORDER BY tmp.RowNum
 END
-
 GO

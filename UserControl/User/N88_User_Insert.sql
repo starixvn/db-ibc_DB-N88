@@ -1,12 +1,14 @@
 ﻿/*<info serverAlias="DBN88POL-N88_UserControl" executers="bodbAdminNet,bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
 
-ALTER PROCEDURE [dbo].[N88_User_Insert] @UserId INT OUTPUT
+ALTER PROCEDURE [dbo].[N88_User_Insert]
+	@UserId INT OUTPUT
 	,@Username VARCHAR(30)
 	,@UserPwd VARCHAR(40) = ''
 	,@SiteId TINYINT = NULL
 	,@FirstName NVARCHAR(50) = NULL
 	,@LastName NVARCHAR(50) = NULL
 	,@Email NVARCHAR(50) = NULL
+	,@DefaultBaseCurrencyId INT = NULL
 	,@GroupId SMALLINT
 	,@CurrentUserId INT
 	,@CurrentSiteId TINYINT
@@ -25,13 +27,14 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20201118@Kos: Support default base currency [RedmineID: #145346]
 
 	Param's Explanation:
-	• @UserId: UserId from table Users
-	• @ErrCode:
-		= 0: Insert successfully.
-		> 0: Specific Error.
-	• @ErrMsg: Error description.
+		• @UserId: UserId from table Users
+		• @ErrCode:
+			= 0: Insert successfully.
+			> 0: Specific Error.
+		• @ErrMsg: Error description.
 
 	*** WRITE LOG template:
 	Main	:	<root><xml path="r" />
@@ -42,8 +45,11 @@ AS
 					<row item="FirstName" alias="f" />
 					<row item="LastName" alias="l" />
 					<row item="Email" alias="e" />
+					<row item="DefaultBaseCurrencyId" alias="bc" />
+					<row item="DefaultBaseCurrencyCode" alias="bcc" />
 				</root>
 */
+
 BEGIN
 	SET NOCOUNT ON
 
@@ -54,12 +60,13 @@ BEGIN
 		,@logSPData NVARCHAR(MAX)
 		,@logSPDataOld NVARCHAR(MAX)
 		,@xml XML
+		,@CurrencyCode VARCHAR(3)
 
 	-- Check duplicate username
 	IF EXISTS (
 			SELECT 1
 			FROM dbo.N88_Users u WITH (NOLOCK)
-			LEFT JOIN dbo.N88_UserSite us WITH (NOLOCK) ON u.UserId = us.UserId
+				LEFT JOIN dbo.N88_UserSite us WITH (NOLOCK) ON u.UserId = us.UserId
 			WHERE Username = @Username
 				AND (
 					(
@@ -87,6 +94,10 @@ BEGIN
 	SELECT @UserId = MAX(UserId) + 1
 	FROM dbo.N88_Users WITH (NOLOCK)
 
+	SELECT @CurrencyCode = Code
+	FROM CustDB.dbo.exchange WITH (NOLOCK)
+	WHERE ExchangeId = @DefaultBaseCurrencyId
+
 	INSERT INTO dbo.N88_Users (
 		UserId
 		,Username
@@ -101,6 +112,7 @@ BEGIN
 		,ModifiedDate
 		,IsLicenseeUser
 		,SourceSiteId
+		,DefaultBaseCurrencyId
 		)
 	VALUES (
 		@UserId
@@ -116,6 +128,7 @@ BEGIN
 		,@LogDate
 		,@IsLicenseeUser
 		,@SiteId
+		,@DefaultBaseCurrencyId
 		)
 
 	-- Write log
@@ -129,8 +142,10 @@ BEGIN
 				,@Email AS '@e'
 				,@SiteId AS '@si'
 				,@IsLicenseeUser AS '@il'
+				,@DefaultBaseCurrencyId AS '@bc'
+				,@CurrencyCode AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
-			INNER JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
+				INNER JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
 			WHERE u.userid = @UserId
 			FOR XML PATH('r')
 				,TYPE
@@ -151,5 +166,4 @@ BEGIN
 		,@OldData = @logSPDataOld
 		,@Duration = @Duration
 END
-
 GO
