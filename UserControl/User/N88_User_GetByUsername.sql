@@ -27,6 +27,7 @@ BEGIN
 		,e.Code AS DefaultBaseCurrencyCode
 		,u.username
 		,u.userpwd
+		,u.IsLicenseeUser
 		,u.LastLoginDate
 		,u.CreatedDate
 		,u.ModifiedDate
