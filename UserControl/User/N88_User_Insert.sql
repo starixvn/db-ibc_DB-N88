@@ -141,11 +141,13 @@ BEGIN
 				,@LastName AS '@l'
 				,@Email AS '@e'
 				,@SiteId AS '@si'
+				,s.SiteName AS '@sn'
 				,@IsLicenseeUser AS '@il'
 				,@DefaultBaseCurrencyId AS '@bc'
 				,@CurrencyCode AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				INNER JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
+				LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON s.SiteId = u.SourceSiteId
 			WHERE u.userid = @UserId
 			FOR XML PATH('r')
 				,TYPE

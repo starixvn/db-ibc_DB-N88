@@ -67,7 +67,7 @@ BEGIN
 				,e.Code AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
-				INNER JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
+				LEFT JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
 			WHERE u.UserId = @UserId
 			FOR XML PATH('r')
 				,TYPE
@@ -119,7 +119,7 @@ BEGIN
 				,e.Code AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
-				INNER JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
+				LEFT JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
 			WHERE u.UserId = @UserId
 			FOR XML PATH('r')
 				,TYPE
