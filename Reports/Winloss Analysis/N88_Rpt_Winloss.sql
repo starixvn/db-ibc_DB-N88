@@ -238,8 +238,8 @@ BEGIN
 			,Turnover
 			,NetTurnover
 			,TurnoverNoDraw
-			,BasedNetTurnover
 			,BasedTurnover
+			,BasedNetTurnover
 			,BasedTurnoverNoDraw
 			,GGR
 			,BasedGGR
