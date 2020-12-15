@@ -16,6 +16,7 @@ AS
 		- 20200915@Percy: Initialize SP [RedmineID: #141575]
 		- 20200928@Percy: Change way to calculate active users [RedmineID: #141575]
 		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
+		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 */
 
 BEGIN
@@ -357,29 +358,74 @@ BEGIN
 
 		INSERT INTO @tempData (Name) VALUES (NULL) -- support web a line in excel
 
-		-- Signup url
+		SELECT Name, NameVN, DateRange, MonthToDate, AllRange, DataType FROM @tempData
+
+		-- Registration Details
 		DECLARE @DefaultSignupUrl VARCHAR(200)
 		SELECT  @DefaultSignupUrl = CASE @SiteId
 										WHEN 3 THEN 'www.bwing.com'
 										END
 
-		SELECT Name, NameVN, DateRange, MonthToDate, AllRange, DataType FROM @tempData
+		DECLARE @CreditAgentName VARCHAR(30) = ''
+		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
 
-		-- Registration Details
-		SELECT SignupUrl, SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
-		FROM
-		(
-			SELECT CASE WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl ELSE cg.SignupUrl END AS SignupUrl
+		IF @SiteId = 1
+		BEGIN
+			INSERT INTO #Affiliate (CustId, AffName)
+			SELECT mi.CustId, ai.UserName
+			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
+				INNER JOIN Affiliate_N88.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
+			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
+		END
+		ELSE IF @SiteId = 2
+		BEGIN
+			SELECT @CreditAgentName = 'Goal123Ref01'
+
+			INSERT INTO #Affiliate (CustId, AffName)
+			SELECT mi.CustId, ai.UserName
+			FROM Affiliate_N8G.dbo.MemberInfo mi WITH (NOLOCK)
+				INNER JOIN Affiliate_N8G.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
+			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
+		END
+		ELSE IF @SiteId = 3
+		BEGIN
+			SELECT @CreditAgentName = 'BwingRef01'
+
+			INSERT INTO #Affiliate (CustId, AffName)
+			SELECT mi.CustId, ai.UserName
+			FROM Affiliate_N8B.dbo.MemberInfo mi WITH (NOLOCK)
+				INNER JOIN Affiliate_N8B.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
+			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
+		END
+
+		SELECT ISNULL(SignupUrl, 'None') AS SignupUrl
+			,CASE WHEN SignupUrl = 'Credit Site' THEN N'Trang trả trước' ELSE ISNULL(SignupUrl, N'Không xác định') END AS SignupUrlVN
+			,SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
+		FROM (
+			SELECT
+				CASE
+					WHEN a.CustId IS NOT NULL THEN a.AffName
+					WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
+					ELSE cg.SignupUrl END AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
 			FROM dbo.Customer c WITH (NOLOCK)
+				INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
+				LEFT JOIN #Affiliate a ON c.CustId = a.CustId
 				LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON cg.CustId = c.CustId
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
-			GROUP BY CASE WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl ELSE cg.SignupUrl END
-		) t
-		WHERE SignupUrl IS NOT NULL
+			GROUP BY
+				CASE
+					WHEN a.CustId IS NOT NULL THEN a.AffName
+					WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
+					ELSE cg.SignupUrl END
+		) r
 	END
+
+	DROP TABLE #Affiliate
 END
 GO
