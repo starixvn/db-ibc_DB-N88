@@ -104,7 +104,7 @@ BEGIN
 
 		SELECT RowId, BonusCode, UserName, RegTime, SignupUrl, IsDeposit, FirstDepositAmount
 		FROM (
-			SELECT BonusCode, UserName, RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, IsDeposit, FirstDepositAmount
+			SELECT BonusCode, UserName, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, IsDeposit, FirstDepositAmount
 				,ROW_NUMBER() OVER(ORDER BY
 							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN BonusCode END ASC
 							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN BonusCode END DESC

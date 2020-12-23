@@ -125,7 +125,7 @@ BEGIN
 
 		SELECT RowId, UserName, RegTime, SignupUrl, FirstDepositAmount, NoOfDeposits, DepositAmount
 		FROM (
-			SELECT UserName, RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, FirstDepositAmount, NoOfDeposits, DepositAmount
+			SELECT UserName, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, FirstDepositAmount, NoOfDeposits, DepositAmount
 				,ROW_NUMBER() OVER(ORDER BY
 							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN Username END ASC
 							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN Username END DESC
