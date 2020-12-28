@@ -404,7 +404,7 @@ BEGIN
 		FROM (
 			SELECT
 				CASE
-					WHEN a.CustId IS NOT NULL THEN a.AffName
+					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					ELSE cg.SignupUrl END AS SignupUrl
@@ -419,7 +419,7 @@ BEGIN
 				AND c.IsTest = 0
 			GROUP BY
 				CASE
-					WHEN a.CustId IS NOT NULL THEN a.AffName
+					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					ELSE cg.SignupUrl END

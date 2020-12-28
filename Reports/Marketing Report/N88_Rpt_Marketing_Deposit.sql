@@ -26,7 +26,7 @@ BEGIN
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
-	DECLARE @DepositAmount INT, @CompareDepositAmount INT
+	DECLARE @DepositAmount MONEY, @CompareDepositAmount MONEY
 
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
