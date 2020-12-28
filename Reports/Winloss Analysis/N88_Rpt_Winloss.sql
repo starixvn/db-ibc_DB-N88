@@ -31,6 +31,7 @@ AS
 		- 20200828@Percy: Support multiple brand [RedmineID: #140362]
 		- 20201110@Percy: Enhance code get exchange to improve performance [RedmineID: #144972]
 		- 20201201@Percy: Add Net TurnOver column and include free bet tickets [RedmineID: #146210]
+		- 20201223@Sol: Add new columns to report - [RedmineID: #147542]
 */
 
 BEGIN
@@ -38,6 +39,11 @@ BEGIN
 
 	DECLARE @FDate DATE, @TDate DATE
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
+
+	-- Data on GMT+0 --> convert timezone
+	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME
+	SELECT  @FromDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
+			,@ToDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
 	-- 1. Get raw data
 	CREATE TABLE #__N88_RptWinloss
@@ -55,6 +61,12 @@ BEGIN
 		,BasedNetTurnOver		MONEY
 		,BasedTurnoverNoDraw	MONEY
 		,BasedWinloss			MONEY
+		,NumberOfDeposit		INT
+		,DepositAmount			MONEY
+		,BasedDepositAmount		MONEY
+		,NumberOfWithdrawal		INT
+		,WithdrawalAmount		MONEY
+		,BasedWithdrawalAmount	MONEY
 	)
 	CREATE CLUSTERED INDEX CIX_N88_RptWinloss ON #__N88_RptWinloss (CustId)
 
@@ -76,6 +88,12 @@ BEGIN
 			rptDate, GameType, CustId, CurrencyId
 			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
 			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
+			,NumberOfDeposit	
+			,DepositAmount		
+			,BasedDepositAmount	
+			,NumberOfWithdrawal	
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -87,6 +105,7 @@ BEGIN
 			,SUM(NetTurnOver * e.Rate)
 			,SUM(TurnOverNoDraw * e.Rate)
 			,SUM(Winloss * e.Rate)
+			,0,0,0,0,0,0
 		FROM (
 			SELECT
 				r.WinlostDate
@@ -147,6 +166,12 @@ BEGIN
 			rptDate, GameType, CustId, CurrencyId
 			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
 			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
+			,NumberOfDeposit	
+			,DepositAmount		
+			,BasedDepositAmount	
+			,NumberOfWithdrawal	
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -158,6 +183,7 @@ BEGIN
 			,SUM(NetTurnOver * e.Rate)
 			,SUM(TurnOverNoDraw * e.Rate)
 			,SUM(Winloss * e.Rate)
+			,0,0,0,0,0,0
 		FROM (
 			SELECT
 				r.WinlostDate
@@ -203,6 +229,111 @@ BEGIN
 		GROUP BY rptDate, GameType, CustId, Currency
 	END
 
+	----deposit/withdraw number/amount
+	BEGIN 
+		--deposit
+		INSERT INTO #__N88_RptWinloss
+		(
+			rptDate, GameType, CustId, CurrencyId
+			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
+			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
+			,NumberOfDeposit	
+			,DepositAmount		
+			,BasedDepositAmount	
+			,NumberOfWithdrawal	
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
+		)
+		SELECT d.CreateTimeGMT, 0,
+			d.CustId, d.CurrencyId, 
+			0,0,0,0,0,0,0,0,0,
+			SUM(d.NumberOfDeposit) NumberOfDeposit, 
+			SUM(d.DepositAmt) DepositAmt, 
+			SUM(d.DepositAmt * e.Rate) AS BasedDepositAmount
+			,0,0,0
+		FROM 
+		(
+			SELECT 
+				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS CreateTimeGMT, c.CustId, c.CurrencyId, 
+				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
+				COUNT(d.DepositId) AS NumberOfDeposit,
+				SUM(d.Amount / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmt
+			FROM dbo.DepositInfo d WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) 
+					ON d.CustId = c.CustId
+			WHERE d.WinlostDate BETWEEN @FDate AND @ToDate
+				AND d.CreateTime >= @FromDateTimeGMT0 
+				AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND d.SiteId IN 
+								(
+									SELECT SiteId
+									FROM dbo.ServerInfo s WITH (NOLOCK)
+										INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
+									WHERE ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.LicenseeId) + ',%'
+								)
+				AND d.Status = 3
+				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), c.CustId, c.CurrencyId
+				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
+		) d
+		INNER JOIN #__Exchange e 
+				ON d.CurrencyId = e.ExchangeId
+					AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY d.CreateTimeGMT, d.CustId, d.CurrencyId
+		
+		--withdraw
+		INSERT INTO #__N88_RptWinloss
+		(
+			rptDate, GameType, CustId, CurrencyId
+			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
+			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
+			,NumberOfDeposit	
+			,DepositAmount		
+			,BasedDepositAmount	
+			,NumberOfWithdrawal	
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
+		)
+		SELECT w.CreateTimeGMT, 0,
+			w.CustId, w.CurrencyId, 
+			0,0,0,0,0,0,0,0,0,
+			0,0,0,
+			SUM(w.NumberOfWithdrawal) NumberOfWithdrawal, 
+			SUM(w.WithdrawalAmount) WithdrawalAmount, 
+			SUM(w.WithdrawalAmount * e.Rate) AS BasedWithdrawalAmount
+		FROM 
+		(
+			SELECT 
+				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS CreateTimeGMT, c.CustId, c.CurrencyId, 
+				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate,
+				COUNT(w.WithdrawalId) AS NumberOfWithdrawal,
+				SUM(w.Amount / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
+			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) 
+					ON w.CustId = c.CustId
+			WHERE w.WinlostDate BETWEEN @FDate AND @ToDate
+				AND w.CreateTime >= @FromDateTimeGMT0 
+				AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND w.SiteId IN 
+								(
+									SELECT SiteId
+									FROM dbo.ServerInfo s WITH (NOLOCK)
+										INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
+									WHERE ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.LicenseeId) + ',%'
+								)
+				AND w.Status = 6
+				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), c.CustId, c.CurrencyId
+				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
+		) w
+		INNER JOIN #__Exchange e 
+				ON w.CurrencyId = e.ExchangeId
+					AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY w.CreateTimeGMT, w.CustId, w.CurrencyId
+
+	END
+	----end
+
 	DROP TABLE #__Exchange
 
 	-- 2. Calc temp result
@@ -226,6 +357,12 @@ BEGIN
 		,BasedAvgBetAmount		MONEY
 		,UniquePlayers			INT
 		,Margin					MONEY
+		,NumberOfDeposit		INT
+		,DepositAmount			MONEY
+		,BasedDepositAmount		MONEY
+		,NumberOfWithdrawal		INT
+		,WithdrawalAmount		MONEY
+		,BasedWithdrawalAmount	MONEY
 	)
 	
 	-- by date/month
@@ -248,6 +385,12 @@ BEGIN
 			,BasedAvgBetAmount
 			,UniquePlayers
 			,Margin
+			,NumberOfDeposit		
+			,DepositAmount
+			,BasedDepositAmount
+			,NumberOfWithdrawal		
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
 		)
 		SELECT 
 			CASE WHEN @GroupBy = 1
@@ -268,6 +411,12 @@ BEGIN
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
 			,COUNT(DISTINCT CustId) AS UniquePlayers
 			,CAST(ISNULL(SUM(Winloss)/NULLIF(SUM(NetTurnOver),0),0) AS MONEY) * 100 AS Margin
+			,SUM(NumberOfDeposit) AS NumberOfDeposit
+			,SUM(DepositAmount) AS DepositAmount
+			,SUM(BasedDepositAmount) AS BasedWithdrawalAmount
+			,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
+			,SUM(WithdrawalAmount) AS WithdrawalAmount
+			,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
 		FROM #__N88_RptWinloss
 		GROUP BY
 			CASE WHEN @GroupBy = 1
@@ -339,6 +488,12 @@ BEGIN
 			,BasedAvgBetAmount
 			,UniquePlayers
 			,Margin
+			,NumberOfDeposit		
+			,DepositAmount
+			,BasedDepositAmount
+			,NumberOfWithdrawal		
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
 		)
 		SELECT 
 			CurrencyId
@@ -356,6 +511,12 @@ BEGIN
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
 			,COUNT(DISTINCT CustId) AS UniquePlayers
 			,CAST(ISNULL(SUM(Winloss)/NULLIF(SUM(NetTurnOver),0),0) AS MONEY) * 100 AS Margin
+			,SUM(NumberOfDeposit) AS NumberOfDeposit
+			,SUM(DepositAmount) AS DepositAmount
+			,SUM(BasedDepositAmount) AS BasedWithdrawalAmount
+			,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
+			,SUM(WithdrawalAmount) AS WithdrawalAmount
+			,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
 		FROM #__N88_RptWinloss r
 		GROUP BY
 			CurrencyId
@@ -374,6 +535,12 @@ BEGIN
 				,Winloss = SUM(Winloss)
 				,BasedWinloss = SUM(BasedWinloss)
 				,BetCount = SUM(BetCount)
+				,NumberOfDeposit = SUM(NumberOfDeposit)	
+				,DepositAmount = SUM(DepositAmount)
+				,BasedDepositAmount = SUM(BasedDepositAmount)
+				,NumberOfWithdrawal = SUM(NumberOfWithdrawal)	
+				,WithdrawalAmount = SUM(WithdrawalAmount)
+				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
 			FROM #__N88_RptWinloss
 			GROUP BY CustId
 		)
@@ -397,6 +564,12 @@ BEGIN
 			,BasedAvgBetAmount
 			,UniquePlayers
 			,Margin
+			,NumberOfDeposit		
+			,DepositAmount
+			,BasedDepositAmount
+			,NumberOfWithdrawal		
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
 		)
 		SELECT 
 			c.UserName
@@ -417,6 +590,12 @@ BEGIN
 			,CASE WHEN BetCount = 0 THEN 0 ELSE BasedNetTurnOver/BetCount END
 			,1 AS UniquePlayers
 			,CASE WHEN NetTurnOver = 0 THEN 0 ELSE Winloss/NetTurnOver * 100 END
+			,NumberOfDeposit		
+			,DepositAmount
+			,BasedDepositAmount
+			,NumberOfWithdrawal		
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
 		FROM CTE_Result r
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 	END
@@ -443,6 +622,12 @@ BEGIN
 		,BasedAvgBetAmount		MONEY
 		,UniquePlayers			INT
 		,Margin					MONEY
+		,NumberOfDeposit		INT
+		,DepositAmount			MONEY
+		,BasedDepositAmount		MONEY
+		,NumberOfWithdrawal		INT
+		,WithdrawalAmount		MONEY
+		,BasedWithdrawalAmount	MONEY
 	)
 
 	DECLARE @RowStart INT , @RowEnd INT
@@ -469,6 +654,12 @@ BEGIN
 		,BasedAvgBetAmount
 		,UniquePlayers
 		,Margin
+		,NumberOfDeposit		
+		,DepositAmount
+		,BasedDepositAmount
+		,NumberOfWithdrawal		
+		,WithdrawalAmount	
+		,BasedWithdrawalAmount
 	FROM #__tmpResult
 
 	DROP TABLE #__tmpResult
@@ -494,7 +685,13 @@ BEGIN
 		,AvgBetAmount
 		,BasedAvgBetAmount
 		,UniquePlayers
-		,(-1) * (CASE WHEN @IsDetailInOriginalCurr = 0 THEN BasedGGR/NULLIF(BasedNetTurnover, 0) ELSE GGR/NULLIF(NetTurnover, 0) END) * 100 AS Margin
+		,(-1) * ISNULL((CASE WHEN @IsDetailInOriginalCurr = 0 THEN BasedGGR/NULLIF(BasedNetTurnover, 0) ELSE GGR/NULLIF(NetTurnover, 0) END), 0) * 100 AS Margin
+		,NumberOfDeposit		
+		,DepositAmount
+		,BasedDepositAmount
+		,NumberOfWithdrawal		
+		,WithdrawalAmount	
+		,BasedWithdrawalAmount
 	FROM #__FinalResult
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY [Group], CurrencyId
@@ -509,6 +706,10 @@ BEGIN
 		,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
 		,COUNT(DISTINCT CustId) AS TotalUniquePlayers
 		,(-1) * ISNULL(SUM(CAST(BasedWinloss AS MONEY))/NULLIF(SUM(BasedNetTurnover), 0), 0) * 100 AS TotalMargin
+		,SUM(NumberOfDeposit) AS TotalNumberOfDeposit
+		,CAST(SUM(BasedDepositAmount) AS MONEY) AS TotalBasedDepositAmount
+		,SUM(NumberOfWithdrawal) AS TotalNumberOfWithdrawal
+		,CAST(SUM(BasedWithdrawalAmount) AS MONEY) AS TotalBasedWithdrawalAmount
 	FROM #__N88_RptWinloss
 
 	DROP TABLE #__FinalResult
