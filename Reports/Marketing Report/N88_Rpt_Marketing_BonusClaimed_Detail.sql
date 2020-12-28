@@ -19,6 +19,7 @@ AS
 
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
+		- 20201215@Percy: Fix sort on Deposit & Withdrawal Amount [RedmineID: #146760]
 
 	Param's Explanation:
 		@SortbyId:
@@ -104,10 +105,10 @@ BEGIN
 						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN c.Username END DESC
 						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN c.RegTime END ASC
 						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN c.RegTime END DESC
-						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN CASE WHEN d.DepositAmount IS NULL THEN 0 ELSE 1 END END ASC
-						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN CASE WHEN d.DepositAmount IS NULL THEN 0 ELSE 1 END END DESC
-						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN CASE WHEN w.WithdrawalAmount IS NULL THEN 0 ELSE 1 END END ASC
-						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN CASE WHEN w.WithdrawalAmount IS NULL THEN 0 ELSE 1 END END DESC
+						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN ISNULL(d.DepositAmount, 0) END ASC
+						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN ISNULL(d.DepositAmount, 0) END DESC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN ISNULL(w.WithdrawalAmount, 0) END ASC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN ISNULL(w.WithdrawalAmount, 0) END DESC
 						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN b.BonusAmount END ASC
 						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN b.BonusAmount END DESC) AS RowId
 			FROM dbo.Customer c WITH (NOLOCK)
