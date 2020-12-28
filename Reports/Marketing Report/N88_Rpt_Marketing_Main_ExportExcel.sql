@@ -177,7 +177,7 @@ BEGIN
 					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
 						AND r.TransDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-						AND r.TransDateGMT BETWEEN @BeginCurrentMonthGMT AND @EndCurrentMonthGMT
+						AND r.TransDateGMT BETWEEN @BeginCurrentMonth AND @EndCurrentMonth
 						AND r.TimeZone = @TimeZone
 						AND r.LicenseeId = @LicenseeId
 				)
