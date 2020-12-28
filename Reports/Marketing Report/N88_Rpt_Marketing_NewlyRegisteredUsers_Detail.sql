@@ -141,7 +141,7 @@ BEGIN
 					) b
 					OUTER APPLY
 					(
-						SELECT d.Amount * e.Rate AS Amount
+						SELECT d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END AS Amount
 						FROM dbo.DepositInfo d WITH (NOLOCK)
 							INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
 								AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate

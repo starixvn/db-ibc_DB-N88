@@ -79,7 +79,7 @@ BEGIN
 										ELSE '1970-01-01' -- Get all
 										END -- GMT+8
 
-		SELECT @BeginCurrentMonth = DATEADD(MONTH, DATEDIFF(MONTH, 0, GETDATE()), 0)
+		SELECT @BeginCurrentMonth = DATEADD(MONTH, DATEDIFF(MONTH, 0, DATEADD(HOUR, 4 + @TimeZone, GETDATE())), 0)
 		SELECT @EndCurrentMonth = DATEADD(DAY, -1, DATEADD(MONTH, 1, @BeginCurrentMonth))
 
 		-- Data on GMT+0 --> convert timezone
@@ -129,7 +129,7 @@ BEGIN
 					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
 						AND r.TransDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-						AND r.TransDateGMT BETWEEN @BeginCurrentMonthGMT AND @EndCurrentMonthGMT
+						AND r.TransDateGMT BETWEEN @BeginCurrentMonth AND @EndCurrentMonth
 						AND r.TimeZone = @TimeZone
 						AND r.LicenseeId = @LicenseeId
 				)
