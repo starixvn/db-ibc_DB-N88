@@ -72,6 +72,28 @@ BEGIN
 
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
+
+	--Deposit temp table
+	CREATE TABLE #__DepositTable
+	(
+		rptDate					DATE
+		,CustId					INT
+		,CurrencyId				INT
+		,NumberOfDeposit		INT
+		,DepositAmount			MONEY
+		,BasedDepositAmount		MONEY
+	)
+
+	--withdrawal temp table
+	CREATE TABLE #__WithdrawTable
+	(
+		rptDate					DATE
+		,CustId					INT
+		,CurrencyId				INT
+		,NumberOfWithdrawal		INT
+		,WithdrawalAmount		MONEY
+		,BasedWithdrawalAmount	MONEY
+	)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE
 	
@@ -88,12 +110,6 @@ BEGIN
 			rptDate, GameType, CustId, CurrencyId
 			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
 			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
-			,NumberOfDeposit	
-			,DepositAmount		
-			,BasedDepositAmount	
-			,NumberOfWithdrawal	
-			,WithdrawalAmount	
-			,BasedWithdrawalAmount
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -105,7 +121,6 @@ BEGIN
 			,SUM(NetTurnOver * e.Rate)
 			,SUM(TurnOverNoDraw * e.Rate)
 			,SUM(Winloss * e.Rate)
-			,0,0,0,0,0,0
 		FROM (
 			SELECT
 				r.WinlostDate
@@ -166,12 +181,6 @@ BEGIN
 			rptDate, GameType, CustId, CurrencyId
 			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
 			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
-			,NumberOfDeposit	
-			,DepositAmount		
-			,BasedDepositAmount	
-			,NumberOfWithdrawal	
-			,WithdrawalAmount	
-			,BasedWithdrawalAmount
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -183,7 +192,6 @@ BEGIN
 			,SUM(NetTurnOver * e.Rate)
 			,SUM(TurnOverNoDraw * e.Rate)
 			,SUM(Winloss * e.Rate)
-			,0,0,0,0,0,0
 		FROM (
 			SELECT
 				r.WinlostDate
@@ -232,25 +240,18 @@ BEGIN
 	----deposit/withdraw number/amount
 	BEGIN 
 		--deposit
-		INSERT INTO #__N88_RptWinloss
+		INSERT INTO #__DepositTable
 		(
-			rptDate, GameType, CustId, CurrencyId
-			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
-			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
+			rptDate, CustId, CurrencyId
 			,NumberOfDeposit	
 			,DepositAmount		
 			,BasedDepositAmount	
-			,NumberOfWithdrawal	
-			,WithdrawalAmount	
-			,BasedWithdrawalAmount
+			
 		)
-		SELECT d.CreateTimeGMT, 0,
-			d.CustId, d.CurrencyId, 
-			0,0,0,0,0,0,0,0,0,
+		SELECT d.CreateTimeGMT, d.CustId, d.CurrencyId, 
 			SUM(d.NumberOfDeposit) NumberOfDeposit, 
 			SUM(d.DepositAmt) DepositAmt, 
 			SUM(d.DepositAmt * e.Rate) AS BasedDepositAmount
-			,0,0,0
 		FROM 
 		(
 			SELECT 
@@ -279,25 +280,18 @@ BEGIN
 		INNER JOIN #__Exchange e 
 				ON d.CurrencyId = e.ExchangeId
 					AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		WHERE EXISTS (SELECT TOP 1 1 FROM #__N88_RptWinloss n WHERE n.rptDate = d.CreateTimeGMT AND n.CustId = d.CustId AND n.CurrencyId = d.CurrencyId)
 		GROUP BY d.CreateTimeGMT, d.CustId, d.CurrencyId
 		
 		--withdraw
-		INSERT INTO #__N88_RptWinloss
+		INSERT INTO #__WithdrawTable
 		(
-			rptDate, GameType, CustId, CurrencyId
-			,BetCount, TurnOver, NetTurnOver, TurnoverNoDraw, Winloss
-			,BasedTurnOver, BasedNetTurnOver, BasedTurnoverNoDraw, BasedWinloss
-			,NumberOfDeposit	
-			,DepositAmount		
-			,BasedDepositAmount	
+			rptDate, CustId, CurrencyId
 			,NumberOfWithdrawal	
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
 		)
-		SELECT w.CreateTimeGMT, 0,
-			w.CustId, w.CurrencyId, 
-			0,0,0,0,0,0,0,0,0,
-			0,0,0,
+		SELECT w.CreateTimeGMT, w.CustId, w.CurrencyId, 
 			SUM(w.NumberOfWithdrawal) NumberOfWithdrawal, 
 			SUM(w.WithdrawalAmount) WithdrawalAmount, 
 			SUM(w.WithdrawalAmount * e.Rate) AS BasedWithdrawalAmount
@@ -329,10 +323,26 @@ BEGIN
 		INNER JOIN #__Exchange e 
 				ON w.CurrencyId = e.ExchangeId
 					AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		WHERE EXISTS (SELECT TOP 1 1 FROM #__N88_RptWinloss n WHERE n.rptDate = w.CreateTimeGMT AND n.CustId = w.CustId AND n.CurrencyId = w.CurrencyId)
 		GROUP BY w.CreateTimeGMT, w.CustId, w.CurrencyId
 
 	END
 	----end
+
+	---- update more info
+	UPDATE n88
+		SET n88.NumberOfDeposit = isnull(d.NumberOfDeposit, 0),
+			n88.DepositAmount = isnull(d.DepositAmount, 0),
+			n88.BasedDepositAmount = isnull(d.BasedDepositAmount, 0),
+			n88.NumberOfWithdrawal = isnull(w.NumberOfWithdrawal, 0),
+			n88.WithdrawalAmount = isnull(w.WithdrawalAmount, 0),
+			n88.BasedWithdrawalAmount = isnull(w.BasedWithdrawalAmount, 0)
+	FROM #__N88_RptWinloss n88 
+		LEFT JOIN #__DepositTable d
+			ON n88.rptDate = d.rptDate AND n88.CustId = d.CustId AND n88.CurrencyId = d.CurrencyId
+		LEFT JOIN #__WithdrawTable w
+			ON n88.rptDate = w.rptDate AND n88.CustId = w.CustId AND n88.CurrencyId = w.CurrencyId
+	---- end
 
 	DROP TABLE #__Exchange
 
@@ -714,5 +724,8 @@ BEGIN
 
 	DROP TABLE #__FinalResult
 	DROP TABLE #__N88_RptWinloss
+	DROP TABLE #__DepositTable
+	DROP TABLE #__WithdrawTable
+
 END
 GO
