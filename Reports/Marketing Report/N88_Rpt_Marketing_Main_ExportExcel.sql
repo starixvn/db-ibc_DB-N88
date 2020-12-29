@@ -18,6 +18,7 @@ AS
 		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
+		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" and sort - [RedmineID: #147542]
 */
 
 BEGIN
@@ -416,10 +417,15 @@ BEGIN
 										END
 
 		DECLARE @CreditAgentName VARCHAR(30) = ''
+		DECLARE @MainUrls TABLE (Url VARCHAR(200))
 		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
 
 		IF @SiteId = 1
 		BEGIN
+
+			INSERT INTO @MainUrls (Url)
+			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
+
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
@@ -429,6 +435,9 @@ BEGIN
 		ELSE IF @SiteId = 2
 		BEGIN
 			SELECT @CreditAgentName = 'Goal123Ref01'
+
+			INSERT INTO @MainUrls (Url)
+			VALUES ('www.goal123.com'), ('m.goal123.com')
 
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
@@ -440,6 +449,9 @@ BEGIN
 		BEGIN
 			SELECT @CreditAgentName = 'BwingRef01'
 
+			INSERT INTO @MainUrls (Url)
+			VALUES ('www.bwing.com'), ('m.bwing.com')
+
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8B.dbo.MemberInfo mi WITH (NOLOCK)
@@ -448,31 +460,45 @@ BEGIN
 		END
 
 		SELECT ISNULL(SignupUrl, 'None') AS SignupUrl
-			,CASE WHEN SignupUrl = 'Credit Site' THEN N'Trang trả trước' ELSE ISNULL(SignupUrl, N'Không xác định') END AS SignupUrlVN
+			,CASE WHEN SignupUrl = 'Bong88/Viva88' THEN N'Trang trả trước' ELSE ISNULL(SignupUrl, N'Không xác định') END AS SignupUrlVN
 			,SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
 		FROM (
 			SELECT
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
-					WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					ELSE cg.SignupUrl END AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
+				,CASE
+					WHEN a.CustId IS NOT NULL THEN 2
+					WHEN ag.UserName = @CreditAgentName THEN 3
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL) OR mu.Url IS NOT NULL THEN 1
+					WHEN cg.CustId IS NOT NULL THEN 4
+					ELSE 5 END AS OrderCol
 			FROM dbo.Customer c WITH (NOLOCK)
 				INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
 				LEFT JOIN #Affiliate a ON c.CustId = a.CustId
 				LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON cg.CustId = c.CustId
+				LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
 			GROUP BY
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
-					WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					ELSE cg.SignupUrl END
+				, CASE
+					WHEN a.CustId IS NOT NULL THEN 2
+					WHEN ag.UserName = @CreditAgentName THEN 3
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL) OR mu.Url IS NOT NULL THEN 1
+					WHEN cg.CustId IS NOT NULL THEN 4
+					ELSE 5 END
 		) r
+		ORDER BY r.OrderCol, r.SignupUrl
 	END
 
 	DROP TABLE #Affiliate
