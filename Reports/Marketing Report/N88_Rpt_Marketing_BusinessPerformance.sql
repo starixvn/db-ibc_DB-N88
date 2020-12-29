@@ -20,6 +20,7 @@ AS
 		- 20200915@Percy: Recalculate total paid users (first deposit users) [RedmineID: #141575]
 		- 20200928@Percy: Add Deposit Amount, Withdrawal Amount, Bonus Users [RedmineID: #141575]
 		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
+		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
 */
 
 BEGIN
@@ -36,6 +37,7 @@ BEGIN
 			,@DepositUsers INT, @CompareDepositUsers INT
 			,@UptoTotalUsers INT, @CompareUptoTotalUsers INT
 			,@NewlyRegisterUsers INT, @CompareNewlyRegisterUsers INT
+			,@NewlyActiveRegisterUsers INT, @CompareNewlyActiveRegisterUsers INT
 			,@ActiveUsers INT, @CompareActiveUsers INT
 			,@DepositAmount MONEY, @CompareDepositAmount MONEY
 			,@WithdrawalAmount MONEY, @CompareWithdrawalAmount MONEY
@@ -83,6 +85,7 @@ BEGIN
 					EXISTS (SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK) WHERE c.CustId = r.CustId)
 					OR EXISTS (SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) WHERE c.CustId = t.CustId)
 				)
+
 		END
 
 		-- Get data
@@ -163,6 +166,33 @@ BEGIN
 				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND b.SiteId = @SiteId
 				AND c.IsTest = 0
+
+			--newly active registered users
+			SELECT @NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
+			FROM (
+				SELECT CustId
+				FROM (
+					SELECT CustId
+					FROM dbo.N88_RptWinloss WITH (NOLOCK)
+					WHERE TransDate BETWEEN @tmpFromDate AND @tmpToDate
+						AND TransDateGMT BETWEEN @FromDate AND @ToDate
+						AND TimeZone = @TimeZone
+						AND LicenseeId = @LicenseeId
+					GROUP BY CustId
+
+					UNION ALL
+					SELECT CustId
+					FROM dbo.TpTransferInfo WITH (NOLOCK)
+					WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+						AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND SiteId = @SiteId
+					GROUP BY CustId
+				) AS t
+				GROUP BY CustId
+			) AS a
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
+			WHERE c.IsTest = 0
+
 		END
 
 		-- Get data for compare
@@ -243,6 +273,33 @@ BEGIN
 				AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 				AND b.SiteId = @SiteId
 				AND c.IsTest = 0
+
+			--compare newly active registered users
+			SELECT @CompareNewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @CompareFromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
+			FROM (
+				SELECT CustId
+				FROM (
+					SELECT CustId
+					FROM dbo.N88_RptWinloss WITH (NOLOCK)
+					WHERE TransDate BETWEEN @tmpFromDate AND @tmpToDate
+						AND TransDateGMT BETWEEN @CompareFromDate AND @CompareToDate
+						AND TimeZone = @TimeZone
+						AND LicenseeId = @LicenseeId
+					GROUP BY CustId
+
+					UNION ALL
+					SELECT CustId
+					FROM dbo.TpTransferInfo WITH (NOLOCK)
+					WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+						AND CreateTime >= @CompareFromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+						AND SiteId = @SiteId
+					GROUP BY CustId
+				) AS t
+				GROUP BY CustId
+			) AS a
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
+			WHERE c.IsTest = 0
+
 		END
 	END
 
@@ -258,6 +315,8 @@ BEGIN
 			,@CompareDepositUsers AS CompareDepositUsers
 			,@NewlyRegisterUsers AS NewlyRegisterUsers
 			,@CompareNewlyRegisterUsers AS CompareNewlyRegisterUsers
+			,@NewlyActiveRegisterUsers AS NewlyActiveRegisterUsers
+			,@CompareNewlyActiveRegisterUsers AS CompareNewlyActiveRegisterUsers
 			,@ActiveUsers AS ActiveUsers
 			,@CompareActiveUsers AS CompareActiveUsers
 			,@DepositAmount AS DepositAmount

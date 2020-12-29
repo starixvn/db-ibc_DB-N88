@@ -17,6 +17,7 @@ AS
 		- 20200928@Percy: Change way to calculate active users [RedmineID: #141575]
 		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
+		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
 */
 
 BEGIN
@@ -31,6 +32,8 @@ BEGIN
 			,@MTD_NoOfUsers					INT
 			,@NewlyRegisterUsers			INT
 			,@MTD_NewlyRegisterUsers		INT
+			,@NewlyActiveRegisterUsers		INT
+			,@MTD_NewlyActiveRegisterUsers	INT
 			,@ActiveUsers					INT
 			,@MTD_ActiveUsers				INT
 
@@ -121,6 +124,51 @@ BEGIN
 			)
 
 		SELECT @MTD_ActiveUsers = COUNT(1)
+		FROM dbo.Customer c WITH (NOLOCK)
+		WHERE c.SiteId = @SiteId
+			AND c.IsTest = 0
+			AND (
+				EXISTS (
+					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					WHERE c.CustId = r.CustId
+						AND r.TransDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
+						AND r.TransDateGMT BETWEEN @BeginCurrentMonth AND @EndCurrentMonth
+						AND r.TimeZone = @TimeZone
+						AND r.LicenseeId = @LicenseeId
+				)
+				OR EXISTS (
+					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
+					WHERE c.CustId = t.CustId
+						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
+						AND t.CreateTime >= @BeginCurrentMonthGMT AND t.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
+						AND t.SiteId = @SiteId
+				)
+			)
+
+		-- Newly Active Registered Users
+		SELECT @NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
+		FROM dbo.Customer c WITH (NOLOCK)
+		WHERE c.SiteId = @SiteId
+			AND c.IsTest = 0
+			AND (
+				EXISTS (
+					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					WHERE c.CustId = r.CustId
+						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
+						AND r.TransDateGMT BETWEEN @FromDate AND @ToDate
+						AND r.TimeZone = @TimeZone
+						AND r.LicenseeId = @LicenseeId
+				)
+				OR EXISTS (
+					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
+					WHERE c.CustId = t.CustId
+						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
+						AND t.CreateTime >= @FromDateTimeGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND t.SiteId = @SiteId
+				)
+			)
+
+		SELECT @MTD_NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @BeginCurrentMonthGMT AND RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END)
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
@@ -310,6 +358,7 @@ BEGIN
 			('Total Users'					, N'Tổng khách hiện có'	, @NoOfUsers			, @MTD_NoOfUsers			, 0 , 1)
 			,('NRU - Newly Registered Users', N'Số khách mới'		, @NewlyRegisterUsers	, @MTD_NewlyRegisterUsers	, 0 , 1)
 			,('Active Users'				, N'Số khách có cược'	, @ActiveUsers			, @MTD_ActiveUsers			, 0 , 1)
+			,('Active NRU'					, N'Số khách mới có cược', @NewlyActiveRegisterUsers, @MTD_NewlyActiveRegisterUsers			, 0 , 1)
 		
 		-- Bonus Info
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
