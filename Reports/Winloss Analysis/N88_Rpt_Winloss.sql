@@ -95,6 +95,7 @@ BEGIN
 		,BasedWithdrawalAmount	MONEY
 	)
 	
+	DECLARE @tblCustId TABLE(CustId INT) 
 	DECLARE @MinDate DATE, @MaxDate DATE
 	
 	---- by winlostdate
@@ -237,6 +238,10 @@ BEGIN
 		GROUP BY rptDate, GameType, CustId, Currency
 	END
 
+	---- list customer by id
+	INSERT INTO @tblCustId(CustId)
+	SELECT DISTINCT CustId FROM #__N88_RptWinloss
+
 	----deposit/withdraw number/amount
 	BEGIN 
 		--deposit
@@ -280,7 +285,6 @@ BEGIN
 		INNER JOIN #__Exchange e 
 				ON d.CurrencyId = e.ExchangeId
 					AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		WHERE EXISTS (SELECT TOP 1 1 FROM #__N88_RptWinloss n WHERE n.rptDate = d.CreateTimeGMT AND n.CustId = d.CustId AND n.CurrencyId = d.CurrencyId)
 		GROUP BY d.CreateTimeGMT, d.CustId, d.CurrencyId
 		
 		--withdraw
@@ -323,26 +327,10 @@ BEGIN
 		INNER JOIN #__Exchange e 
 				ON w.CurrencyId = e.ExchangeId
 					AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		WHERE EXISTS (SELECT TOP 1 1 FROM #__N88_RptWinloss n WHERE n.rptDate = w.CreateTimeGMT AND n.CustId = w.CustId AND n.CurrencyId = w.CurrencyId)
 		GROUP BY w.CreateTimeGMT, w.CustId, w.CurrencyId
 
 	END
 	----end
-
-	---- update more info
-	UPDATE n88
-		SET n88.NumberOfDeposit = isnull(d.NumberOfDeposit, 0),
-			n88.DepositAmount = isnull(d.DepositAmount, 0),
-			n88.BasedDepositAmount = isnull(d.BasedDepositAmount, 0),
-			n88.NumberOfWithdrawal = isnull(w.NumberOfWithdrawal, 0),
-			n88.WithdrawalAmount = isnull(w.WithdrawalAmount, 0),
-			n88.BasedWithdrawalAmount = isnull(w.BasedWithdrawalAmount, 0)
-	FROM #__N88_RptWinloss n88 
-		LEFT JOIN #__DepositTable d
-			ON n88.rptDate = d.rptDate AND n88.CustId = d.CustId AND n88.CurrencyId = d.CurrencyId
-		LEFT JOIN #__WithdrawTable w
-			ON n88.rptDate = w.rptDate AND n88.CustId = w.CustId AND n88.CurrencyId = w.CurrencyId
-	---- end
 
 	DROP TABLE #__Exchange
 
@@ -404,10 +392,10 @@ BEGIN
 		)
 		SELECT 
 			CASE WHEN @GroupBy = 1
-				THEN CONVERT(VARCHAR(500), rptDate, 101)
-				ELSE RIGHT(CONVERT(VARCHAR(10), DATEADD(MONTH, DATEDIFF(MONTH, 0, rptDate), 0), 103), 7)
+				THEN CONVERT(VARCHAR(500), r.rptDate, 101)
+				ELSE RIGHT(CONVERT(VARCHAR(10), DATEADD(MONTH, DATEDIFF(MONTH, 0, r.rptDate), 0), 103), 7)
 				END
-			,CurrencyId
+			,r.CurrencyId
 			,SUM(TurnOver)
 			,SUM(NetTurnOver)
 			,SUM(TurnoverNoDraw)
@@ -419,21 +407,25 @@ BEGIN
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
-			,COUNT(DISTINCT CustId) AS UniquePlayers
+			,COUNT(DISTINCT r.CustId) AS UniquePlayers
 			,CAST(ISNULL(SUM(Winloss)/NULLIF(SUM(NetTurnOver),0),0) AS MONEY) * 100 AS Margin
-			,SUM(NumberOfDeposit) AS NumberOfDeposit
-			,SUM(DepositAmount) AS DepositAmount
-			,SUM(BasedDepositAmount) AS BasedWithdrawalAmount
-			,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
-			,SUM(WithdrawalAmount) AS WithdrawalAmount
-			,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
-		FROM #__N88_RptWinloss
+			,SUM(d.NumberOfDeposit) AS NumberOfDeposit
+			,SUM(d.DepositAmount) AS DepositAmount
+			,SUM(d.BasedDepositAmount) AS BasedDepositAmount
+			,SUM(w.NumberOfWithdrawal) AS NumberOfWithdrawal
+			,SUM(w.WithdrawalAmount) AS WithdrawalAmount
+			,SUM(w.BasedWithdrawalAmount) AS BasedWithdrawalAmount
+		FROM #__N88_RptWinloss r
+			LEFT JOIN #__DepositTable d
+				ON r.rptDate = d.rptDate AND r.CurrencyId = d.CurrencyId AND r.CustId = d.CustId
+			LEFT JOIN #__WithdrawTable w 
+				ON r.rptDate = w.rptDate AND r.CurrencyId = w.CurrencyId AND r.CustId = w.CustId
 		GROUP BY
 			CASE WHEN @GroupBy = 1
-				THEN CONVERT(VARCHAR(500), rptDate, 101)
-				ELSE RIGHT(CONVERT(VARCHAR(10), DATEADD(MONTH, DATEDIFF(MONTH, 0, rptDate), 0), 103), 7)
+				THEN CONVERT(VARCHAR(500), r.rptDate, 101)
+				ELSE RIGHT(CONVERT(VARCHAR(10), DATEADD(MONTH, DATEDIFF(MONTH, 0, r.rptDate), 0), 103), 7)
 				END
-			,CurrencyId
+			,r.CurrencyId
 	END
 	-- by product - gametype
 	ELSE IF (@GroupBy = 3)
@@ -481,6 +473,50 @@ BEGIN
 	-- by currency
 	ELSE IF (@GroupBy = 4)
 	BEGIN
+		
+		;WITH sumTicket AS
+		(
+			SELECT
+				r.CurrencyId AS [Group]
+			   ,r.CurrencyId
+			   ,SUM(TurnOver) AS TurnOver
+			   ,SUM(NetTurnOver) AS NetTurnOver
+			   ,SUM(TurnoverNoDraw) AS TurnoverNoDraw
+			   ,SUM(BasedTurnOver) AS BasedTurnOver
+			   ,SUM(BasedNetTurnOver) AS BasedNetTurnOver
+			   ,SUM(BasedTurnoverNoDraw) AS BasedTurnoverNoDraw
+			   ,SUM(Winloss) AS Winloss
+			   ,SUM(BasedWinloss) AS BasedWinloss
+			   ,SUM(BetCount) AS BetCount
+			   ,CAST(ISNULL(SUM(NetTurnOver) / NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS AvgBetAmount
+			   ,CAST(ISNULL(SUM(BasedNetTurnOver) / NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS BasedAvgBetAmount
+			   ,COUNT(DISTINCT r.CustId) AS UniquePlayers
+			   ,CAST(ISNULL(SUM(Winloss) / NULLIF(SUM(NetTurnOver), 0), 0) AS MONEY) * 100 AS Margin
+			FROM #__N88_RptWinloss r
+			GROUP BY r.CurrencyId
+		), sumDeposit AS
+		(
+			SELECT
+					CurrencyId
+				   ,SUM(d.NumberOfDeposit) AS NumberOfDeposit
+				   ,SUM(d.DepositAmount) AS DepositAmount
+				   ,SUM(d.BasedDepositAmount) AS BasedDepositAmount
+				FROM #__DepositTable d
+					INNER JOIN @tblCustId t
+						ON d.CustId = t.CustId
+				GROUP BY CurrencyId
+		), sumWithdraw AS
+		(
+			SELECT
+					CurrencyId
+				   ,SUM(w.NumberOfWithdrawal) AS NumberOfWithdrawal
+				   ,SUM(w.WithdrawalAmount) AS WithdrawalAmount
+				   ,SUM(w.BasedWithdrawalAmount) AS BasedWithdrawalAmount
+				FROM #__WithdrawTable w
+					INNER JOIN @tblCustId t
+						ON w.CustId = t.CustId
+				GROUP BY CurrencyId
+		)
 		INSERT INTO #__tmpResult 
 		(
 			[Group]
@@ -506,36 +542,21 @@ BEGIN
 			,BasedWithdrawalAmount
 		)
 		SELECT 
-			CurrencyId
-			,CurrencyId
-			,SUM(TurnOver)
-			,SUM(NetTurnOver)
-			,SUM(TurnoverNoDraw)
-			,SUM(BasedTurnOver)
-			,SUM(BasedNetTurnOver)
-			,SUM(BasedTurnoverNoDraw)
-			,SUM(Winloss)
-			,SUM(BasedWinloss)
-			,SUM(BetCount)
-			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
-			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
-			,COUNT(DISTINCT CustId) AS UniquePlayers
-			,CAST(ISNULL(SUM(Winloss)/NULLIF(SUM(NetTurnOver),0),0) AS MONEY) * 100 AS Margin
-			,SUM(NumberOfDeposit) AS NumberOfDeposit
-			,SUM(DepositAmount) AS DepositAmount
-			,SUM(BasedDepositAmount) AS BasedWithdrawalAmount
-			,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
-			,SUM(WithdrawalAmount) AS WithdrawalAmount
-			,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
-		FROM #__N88_RptWinloss r
-		GROUP BY
-			CurrencyId
+			r.[Group], r.CurrencyId, r.TurnOver, r.NetTurnOver, r.TurnoverNoDraw, r.BasedTurnOver, r.BasedNetTurnOver, r.BasedTurnoverNoDraw,
+			r.Winloss, r.BasedWinloss, r.BetCount, r.AvgBetAmount, r.BasedAvgBetAmount, r.UniquePlayers, r.Margin
+			,d.NumberOfDeposit, d.DepositAmount, d.BasedDepositAmount, w.NumberOfWithdrawal, w.WithdrawalAmount, w.BasedWithdrawalAmount
+		FROM sumTicket r
+			LEFT JOIN sumDeposit d
+				ON r.CurrencyId = d.CurrencyId
+			LEFT JOIN sumWithdraw w
+				ON r.CurrencyId = w.CurrencyId
 	END
 	-- by player
 	ELSE IF (@GroupBy = 5)
 	BEGIN
-		WITH CTE_Result AS (
-			SELECT CustId
+		;WITH CTE_Result AS 
+		(
+			SELECT r.CustId
 				,TurnOver = SUM(TurnOver)
 				,NetTurnOver = SUM(NetTurnOver)
 				,TurnoverNoDraw = SUM(TurnoverNoDraw)
@@ -545,14 +566,30 @@ BEGIN
 				,Winloss = SUM(Winloss)
 				,BasedWinloss = SUM(BasedWinloss)
 				,BetCount = SUM(BetCount)
-				,NumberOfDeposit = SUM(NumberOfDeposit)	
-				,DepositAmount = SUM(DepositAmount)
-				,BasedDepositAmount = SUM(BasedDepositAmount)
-				,NumberOfWithdrawal = SUM(NumberOfWithdrawal)	
-				,WithdrawalAmount = SUM(WithdrawalAmount)
-				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
-			FROM #__N88_RptWinloss
-			GROUP BY CustId
+			FROM #__N88_RptWinloss r
+			GROUP BY r.CustId
+		), sumDeposit AS
+		(
+			SELECT
+					d.CustId
+				   ,SUM(d.NumberOfDeposit) AS NumberOfDeposit
+				   ,SUM(d.DepositAmount) AS DepositAmount
+				   ,SUM(d.BasedDepositAmount) AS BasedDepositAmount
+				FROM #__DepositTable d
+					INNER JOIN @tblCustId t
+						ON d.CustId = t.CustId
+				GROUP BY d.CustId
+		), sumWithdraw AS
+		(
+			SELECT
+					w.CustId
+				   ,SUM(w.NumberOfWithdrawal) AS NumberOfWithdrawal
+				   ,SUM(w.WithdrawalAmount) AS WithdrawalAmount
+				   ,SUM(w.BasedWithdrawalAmount) AS BasedWithdrawalAmount
+				FROM #__WithdrawTable w
+					INNER JOIN @tblCustId t
+						ON w.CustId = t.CustId
+				GROUP BY w.CustId
 		)
 		INSERT INTO #__tmpResult
 		(
@@ -608,6 +645,10 @@ BEGIN
 			,BasedWithdrawalAmount
 		FROM CTE_Result r
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+			LEFT JOIN sumDeposit d
+				ON r.CustId = d.CustId
+			LEFT JOIN sumWithdraw w
+				ON r.CustId = w.CustId
 	END
 
 	-- 3. Final result
@@ -696,31 +737,89 @@ BEGIN
 		,BasedAvgBetAmount
 		,UniquePlayers
 		,(-1) * ISNULL((CASE WHEN @IsDetailInOriginalCurr = 0 THEN BasedGGR/NULLIF(BasedNetTurnover, 0) ELSE GGR/NULLIF(NetTurnover, 0) END), 0) * 100 AS Margin
-		,NumberOfDeposit		
-		,DepositAmount
-		,BasedDepositAmount
-		,NumberOfWithdrawal		
-		,WithdrawalAmount	
-		,BasedWithdrawalAmount
+		,ISNULL(NumberOfDeposit, 0) AS NumberOfDeposit
+		,ISNULL(DepositAmount, 0) AS DepositAmount
+		,ISNULL(BasedDepositAmount, 0) AS BasedDepositAmount
+		,ISNULL(NumberOfWithdrawal, 0) AS NumberOfWithdrawal		
+		,ISNULL(WithdrawalAmount, 0) AS	WithdrawalAmount	
+		,ISNULL(BasedWithdrawalAmount, 0) AS BasedWithdrawalAmount
 	FROM #__FinalResult
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY [Group], CurrencyId
 
 	-- total
-	SELECT
-		CAST(SUM(BasedTurnover) AS MONEY) AS TotalBasedTurnover
-		,CAST(SUM(BasedNetTurnover) AS MONEY) AS TotalBasedNetTurnover
-		,CAST(SUM(BasedTurnoverNoDraw) AS MONEY) AS TotalBasedTurnoverNoDraw
-		,(-1) * CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedGGR
-		,SUM(BetCount) AS TotalBetCount
-		,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
-		,COUNT(DISTINCT CustId) AS TotalUniquePlayers
-		,(-1) * ISNULL(SUM(CAST(BasedWinloss AS MONEY))/NULLIF(SUM(BasedNetTurnover), 0), 0) * 100 AS TotalMargin
-		,SUM(NumberOfDeposit) AS TotalNumberOfDeposit
-		,CAST(SUM(BasedDepositAmount) AS MONEY) AS TotalBasedDepositAmount
-		,SUM(NumberOfWithdrawal) AS TotalNumberOfWithdrawal
-		,CAST(SUM(BasedWithdrawalAmount) AS MONEY) AS TotalBasedWithdrawalAmount
-	FROM #__N88_RptWinloss
+	IF (@GroupBy IN (1,2))
+	BEGIN
+		SELECT
+			CAST(SUM(BasedTurnover) AS MONEY) AS TotalBasedTurnover
+			,CAST(SUM(BasedNetTurnover) AS MONEY) AS TotalBasedNetTurnover
+			,CAST(SUM(BasedTurnoverNoDraw) AS MONEY) AS TotalBasedTurnoverNoDraw
+			,(-1) * CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedGGR
+			,SUM(BetCount) AS TotalBetCount
+			,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
+			,COUNT(DISTINCT r.CustId) AS TotalUniquePlayers
+			,(-1) * ISNULL(SUM(CAST(BasedWinloss AS MONEY))/NULLIF(SUM(BasedNetTurnover), 0), 0) * 100 AS TotalMargin
+			,ISNULL(SUM(d.NumberOfDeposit), 0) AS TotalNumberOfDeposit
+			,ISNULL(CAST(SUM(d.BasedDepositAmount) AS MONEY), 0) AS TotalBasedDepositAmount
+			,ISNULL(SUM(w.NumberOfWithdrawal), 0) AS TotalNumberOfWithdrawal
+			,ISNULL(CAST(SUM(w.BasedWithdrawalAmount) AS MONEY), 0) AS TotalBasedWithdrawalAmount
+		FROM #__N88_RptWinloss r
+			LEFT JOIN #__DepositTable d
+				ON r.rptDate = d.rptDate AND r.CurrencyId = d.CurrencyId AND r.CustId = d.CustId
+			LEFT JOIN #__WithdrawTable w 
+				ON r.rptDate = w.rptDate AND r.CurrencyId = w.CurrencyId AND r.CustId = w.CustId
+	END
+	ELSE IF (@GroupBy IN (4,5))
+	BEGIN
+		;WITH sumTicket AS
+		(
+			SELECT
+				CAST(SUM(BasedTurnover) AS MONEY) AS TotalBasedTurnover
+				,CAST(SUM(BasedNetTurnover) AS MONEY) AS TotalBasedNetTurnover
+				,CAST(SUM(BasedTurnoverNoDraw) AS MONEY) AS TotalBasedTurnoverNoDraw
+				,(-1) * CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedGGR
+				,SUM(BetCount) AS TotalBetCount
+				,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
+				,COUNT(DISTINCT r.CustId) AS TotalUniquePlayers
+				,(-1) * ISNULL(SUM(CAST(BasedWinloss AS MONEY))/NULLIF(SUM(BasedNetTurnover), 0), 0) * 100 AS TotalMargin
+			FROM #__N88_RptWinloss r
+		), sumDeposit AS
+		(
+			SELECT
+				ISNULL(SUM(d.NumberOfDeposit), 0) AS TotalNumberOfDeposit
+				,ISNULL(CAST(SUM(d.BasedDepositAmount) AS MONEY), 0) AS TotalBasedDepositAmount
+				FROM #__DepositTable d
+					INNER JOIN @tblCustId t
+						ON d.CustId = t.CustId
+		), sumWithdraw AS
+		(
+			SELECT
+				ISNULL(SUM(w.NumberOfWithdrawal), 0) AS TotalNumberOfWithdrawal
+				,ISNULL(CAST(SUM(w.BasedWithdrawalAmount) AS MONEY), 0) AS TotalBasedWithdrawalAmount
+				FROM #__WithdrawTable w
+					INNER JOIN @tblCustId t
+						ON w.CustId = t.CustId
+		)
+		SELECT *
+		FROM sumTicket, sumDeposit, sumWithdraw
+	END
+	ELSE
+	BEGIN
+		SELECT
+			CAST(SUM(BasedTurnover) AS MONEY) AS TotalBasedTurnover
+			,CAST(SUM(BasedNetTurnover) AS MONEY) AS TotalBasedNetTurnover
+			,CAST(SUM(BasedTurnoverNoDraw) AS MONEY) AS TotalBasedTurnoverNoDraw
+			,(-1) * CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedGGR
+			,SUM(BetCount) AS TotalBetCount
+			,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
+			,COUNT(DISTINCT r.CustId) AS TotalUniquePlayers
+			,(-1) * ISNULL(SUM(CAST(BasedWinloss AS MONEY))/NULLIF(SUM(BasedNetTurnover), 0), 0) * 100 AS TotalMargin
+			,0 AS TotalNumberOfDeposit
+			,0 AS TotalBasedDepositAmount
+			,0 AS TotalNumberOfWithdrawal
+			,0 AS TotalBasedWithdrawalAmount
+		FROM #__N88_RptWinloss r
+	END
 
 	DROP TABLE #__FinalResult
 	DROP TABLE #__N88_RptWinloss
