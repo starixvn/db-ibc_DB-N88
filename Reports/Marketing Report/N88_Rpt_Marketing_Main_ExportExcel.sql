@@ -475,7 +475,7 @@ BEGIN
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
 					WHEN ag.UserName = @CreditAgentName THEN 3
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL) OR mu.Url IS NOT NULL THEN 1
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1
 					WHEN cg.CustId IS NOT NULL THEN 4
 					ELSE 5 END AS OrderCol
 			FROM dbo.Customer c WITH (NOLOCK)
@@ -494,7 +494,7 @@ BEGIN
 				, CASE
 					WHEN a.CustId IS NOT NULL THEN 2
 					WHEN ag.UserName = @CreditAgentName THEN 3
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL) OR mu.Url IS NOT NULL THEN 1
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1
 					WHEN cg.CustId IS NOT NULL THEN 4
 					ELSE 5 END
 		) r
