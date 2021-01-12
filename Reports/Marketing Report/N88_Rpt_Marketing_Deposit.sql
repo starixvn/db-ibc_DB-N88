@@ -16,6 +16,7 @@ AS
 
 	Revisions:
 		- 20201215@Percy: Initialize SP [RedmineID: #146760]
+		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
 */
 
 BEGIN
@@ -149,13 +150,13 @@ BEGIN
 		SELECT
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 				ELSE 'None' END AS SignUpSource
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
 				ELSE cg.SignupUrl END AS SignupUrl
 			,SUM(d.FirstDepositAmount) AS FirstDepositAmount
@@ -170,13 +171,13 @@ BEGIN
 		GROUP BY
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 				ELSE 'None' END
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
 				ELSE cg.SignupUrl END
 

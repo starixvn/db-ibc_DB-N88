@@ -20,6 +20,7 @@ AS
 	Revisions:
 		- 20201215@Percy: Initialize SP [RedmineID: #146760]
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
+		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
 
 	Param's Explanation:
 		@SortbyId:
@@ -143,7 +144,7 @@ BEGIN
 				SELECT c.UserName, c.RegTime
 					,CASE
 						WHEN a.CustId IS NOT NULL THEN a.AffName
-						WHEN ag.UserName = @CreditAgentName THEN 'Credit Site'
+						WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 						WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3 THEN @DefaultSignupUrl
 						ELSE cg.SignupUrl END AS SignupUrl
 					,d.NoOfDeposits
