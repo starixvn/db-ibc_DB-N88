@@ -32,6 +32,7 @@ AS
 		- 20201110@Percy: Enhance code get exchange to improve performance [RedmineID: #144972]
 		- 20201201@Percy: Add Net TurnOver column and include free bet tickets [RedmineID: #146210]
 		- 20201223@Sol: Add new columns to report - [RedmineID: #147542]
+		- 20210113@Sol: group by player - group wl and dep/wit into one row - [RedmineID: #147542]
 */
 
 BEGIN
@@ -520,7 +521,6 @@ BEGIN
 		
 		;WITH CTE_Result AS (
 			SELECT CustId
-				,IsDepositWithrawUser
 				,TurnOver = SUM(TurnOver)
 				,NetTurnOver = SUM(NetTurnOver)
 				,TurnoverNoDraw = SUM(TurnoverNoDraw)
@@ -537,7 +537,7 @@ BEGIN
 				,WithdrawalAmount = SUM(WithdrawalAmount)
 				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
 			FROM #__N88_RptWinloss
-			GROUP BY CustId, IsDepositWithrawUser
+			GROUP BY CustId
 		)
 		INSERT INTO #__tmpResult
 		(
@@ -583,7 +583,7 @@ BEGIN
 			,r.BetCount
 			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE NetTurnOver/BetCount END
 			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE BasedNetTurnOver/BetCount END
-			,CASE WHEN r.IsDepositWithrawUser = 0 THEN 1 ELSE 0 END AS UniquePlayers
+			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE 1 END AS UniquePlayers
 			,CASE WHEN NetTurnOver = 0 THEN 0 ELSE Winloss/NetTurnOver * 100 END
 			,NumberOfDeposit		
 			,DepositAmount
