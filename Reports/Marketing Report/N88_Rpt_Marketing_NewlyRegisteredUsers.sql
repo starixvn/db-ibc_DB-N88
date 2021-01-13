@@ -18,6 +18,7 @@ AS
 		- 20200818@Percy: Initialize SP [RedmineID: #137395]
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
+		- 20210113@Percy: Add 'APP' signup url [RedmineID: #148616]
 */
 
 BEGIN
@@ -92,13 +93,13 @@ BEGIN
 		GROUP BY b.BonusCode
 
 		-- Detail by Signup URL
-		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200)
+		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
 		DECLARE @MainUrls TABLE (Url VARCHAR(200))
 		CREATE TABLE #Affiliate (CustId INT, AffId INT)
 		
 		IF @SiteId = 1
 		BEGIN
-			SELECT @MainUrl = 'Nova88.net'
+			SELECT @MainUrl = 'Nova88.net', @APPSignupUrl = 'app.nova88.net'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
@@ -110,7 +111,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
-			SELECT @CreditAgentName = 'Goal123Ref01', @MainUrl = 'Goal123.com'
+			SELECT @CreditAgentName = 'Goal123Ref01', @MainUrl = 'Goal123.com', @APPSignupUrl = 'app.goal123.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.goal123.com'), ('m.goal123.com')
@@ -122,7 +123,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
-			SELECT @CreditAgentName = 'BwingRef01', @MainUrl = 'Bwing.com', @DefaultUrl = 'www.bwing.com'
+			SELECT @CreditAgentName = 'BwingRef01', @MainUrl = 'Bwing.com', @APPSignupUrl = 'app.bwing.com', @DefaultUrl = 'www.bwing.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.bwing.com'), ('m.bwing.com')
@@ -138,12 +139,14 @@ BEGIN
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
+				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 				ELSE 'None' END AS SignUpSource
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
+				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				ELSE cg.SignupUrl END AS SignupUrl
 			,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.Amount, 0)) AS FirstDepositAmount
 		FROM dbo.Customer c WITH (NOLOCK)
@@ -169,12 +172,14 @@ BEGIN
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
+				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 				ELSE 'None' END
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
+				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				ELSE cg.SignupUrl END
 
 		DROP TABLE #Affiliate

@@ -17,6 +17,7 @@ AS
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
 		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
+		- 20210113@Percy: Add Rebate & Cashback [RedmineID: #148616]
 */
 
 BEGIN
@@ -52,19 +53,34 @@ BEGIN
 			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
 			INSERT INTO #BonusInfo (BonusCode, BonusClaimeds, BonusAmount)
-			SELECT b.BonusCode, COUNT(DISTINCT b.CustId) AS BonusClaimeds, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+			SELECT b.BonusCode, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
 			FROM (
-				SELECT b.BonusCode, b.CustId, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
+				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND b.SiteId = @SiteId
 					AND c.IsTest = 0
-				GROUP BY b.BonusCode, b.CustId, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+				GROUP BY b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) b
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY b.BonusCode
+
+			INSERT INTO #BonusInfo (BonusCode, BonusClaimeds, BonusAmount)
+			SELECT r.BonusCode, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount * e.Rate / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+			FROM (
+				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(r.RedeemAmount) AS BonusAmount
+				FROM dbo.RebateMLog r WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND r.SiteId = @SiteId
+					AND c.IsTest = 0
+				GROUP BY r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
+			) r
+				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY r.BonusCode
 
 			SELECT @BonusAmountClaimeds = SUM(BonusAmount) FROM #BonusInfo
 		END
@@ -79,14 +95,27 @@ BEGIN
 
 			SELECT @CompareBonusAmountClaimeds = SUM(BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
 			FROM (
-				SELECT b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
+				SELECT b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, SUM(b.BonusAmount) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 					AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 					AND b.SiteId = @SiteId
 					AND c.IsTest = 0
-				GROUP BY b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+				GROUP BY b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime))
+			) b
+				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+
+			SELECT @CompareBonusAmountClaimeds = ISNULL(@CompareBonusAmountClaimeds, 0) + ISNULL(SUM(BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END), 0)
+			FROM (
+				SELECT r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, SUM(r.RedeemAmount) AS BonusAmount
+				FROM dbo.RebateMLog r WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND r.CreateTime >= @CompareFromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+					AND r.SiteId = @SiteId
+					AND c.IsTest = 0
+				GROUP BY r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
 			) b
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		END
