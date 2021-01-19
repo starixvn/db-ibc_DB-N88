@@ -167,10 +167,10 @@ BEGIN
 				,SUM(b.Amount)			AS TotalClaimedAmount
 		FROM (
 			SELECT	 BonusCode, SiteId
-					,SUM(CASE WHEN Status = 1 THEN Amount ELSE 0 END) AS Running
-					,SUM(CASE WHEN Status = 2 THEN Amount ELSE 0 END) AS Canceled
-					,SUM(CASE WHEN Status = 4 THEN Amount ELSE 0 END) AS Fulfill
-					,SUM(CASE WHEN Status = 5 THEN Amount ELSE 0 END) AS OtherPlatform
+					,SUM(CASE WHEN Status = 1 THEN BetCount ELSE 0 END) AS Running
+					,SUM(CASE WHEN Status = 2 THEN BetCount ELSE 0 END) AS Canceled
+					,SUM(CASE WHEN Status = 4 THEN BetCount ELSE 0 END) AS Fulfill
+					,SUM(CASE WHEN Status = 5 THEN BetCount ELSE 0 END) AS OtherPlatform
 					,SUM(BetCount) AS BetCount, SUM(Amount) AS Amount
 			FROM #BonusInfo
 			GROUP BY BonusCode, SiteId
