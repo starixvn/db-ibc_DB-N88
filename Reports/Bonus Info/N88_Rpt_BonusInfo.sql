@@ -150,7 +150,9 @@ BEGIN
 			) w ON w.CustId = b.CustId
 		GROUP BY b.SiteId, b.BonusCode
 	)
-	SELECT p.Description AS BonusName, p.BonusCode, p.PromotionType AS BonusType, p.Status AS BonusStatus, p.StartDate, p.EndDate
+	SELECT p.Description AS BonusName, p.BonusCode, p.PromotionType AS BonusType, p.Status AS BonusStatus
+		,DATEADD(HOUR, @TimeZone, p.StartDate) AS StartDate
+		,DATEADD(HOUR, @TimeZone, p.EndDate) AS EndDate
 		,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.TotalDeposit, b.TotalWithdrawal
 	FROM CTE_Bonus b
 		INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND b.SiteId = p.SiteId
