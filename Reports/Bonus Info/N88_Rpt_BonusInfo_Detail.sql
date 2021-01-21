@@ -1,0 +1,178 @@
+/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+ALTER PROCEDURE [dbo].[N88_Rpt_BonusInfo_Detail]
+	@LicenseeId			INT
+	,@BonusCode			VARCHAR(50)
+	,@ClaimedStatusIds	VARCHAR(MAX) = ''
+	,@FromDate			DATE
+	,@ToDate			DATE
+	,@DisplayCurrency	VARCHAR(3)
+	,@TimeZone			SMALLINT = 8
+	,@SortbyId			TINYINT = 1
+	,@IsSortAsc			BIT = 1
+	,@PageIndex			INT = 1
+	,@PageSize			INT = 50
+	,@NRows				INT = 0 OUTPUT
+AS
+
+/*
+	Created: 20200105@Percy
+	DB: DBN88-bodb_N88
+	Task: MPA - Marketing Report - Bonus Info
+
+	Revisions:
+		- 20200105@Percy: Initialize SP [RedmineID: #146759]
+
+	Param's Explanation:
+		@SortbyId:
+			. 1 = Username
+			. 2 = Claim Date
+			. 3 = Bonus Amount Claimed
+			. 4 = Deposit Amount
+			. 5 = Withdrawal Amount
+			. 6 = Status
+			. 7 = Percent Completion
+*/
+
+BEGIN
+	SET NOCOUNT ON
+
+	DECLARE @SiteId INT
+
+	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
+	DECLARE @tmpFromDate DATE, @tmpToDate DATE
+	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+
+	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, Amount MONEY, PercentagedCompletion FLOAT)
+	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
+	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
+
+	BEGIN
+		SELECT @SiteId = SiteId
+		FROM dbo.ServerInfo s WITH (NOLOCK)
+			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
+		WHERE l.LicenseeId = @LicenseeId
+
+		SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
+
+		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+
+		-- Data on GMT+0 --> convert timezone
+		SELECT  @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
+				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
+
+		-- Get data
+		INSERT INTO #BonusInfo (CustId, CurrencyId, Status, ExchangeDate, ClaimedDate, Amount, PercentagedCompletion)
+		SELECT b.CustId, b.CurrencyId, b.Status, DATEADD(HOUR, -4, b.CreateTime), DATEADD(HOUR, @TimeZone, b.CreateTime), b.BonusAmount
+			,CASE
+				WHEN cbr.Turnover > cbr.Rollover THEN 1.0
+				WHEN cbr.Rollover = 0 THEN 0.0
+				ELSE cbr.Turnover / cbr.Rollover END AS PercentagedCompletion
+		FROM dbo.BonusInfo b WITH (NOLOCK)
+			LEFT JOIN dbo.CustBonusRollover cbr WITH (NOLOCK) ON b.BonusId = cbr.BonusId
+		WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND b.SiteId = @SiteId
+			AND b.BonusCode = @BonusCode
+			AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
+
+		INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
+		SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), RedeemAmount
+		FROM dbo.RebateMLog WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND SiteId = @SiteId
+			AND BonusCode = @BonusCode
+
+		INSERT INTO #DepositInfo (CustId, CurrencyId, ExchangeDate, Amount)
+		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
+		FROM dbo.DepositInfo WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND Status = 3 -- Approved
+			AND SiteId = @SiteId
+		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
+		INSERT INTO #WithdrawalInfo (CustId, CurrencyId, ExchangeDate, Amount)
+		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
+		FROM dbo.WithdrawalInfo WITH (NOLOCK)
+		WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND Status = 6 -- Approved
+			AND SiteId = @SiteId
+		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
+		DELETE b
+		FROM #BonusInfo b
+			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
+		WHERE c.IsTest = 1
+
+		DELETE #DepositInfo WHERE CustId NOT IN (SELECT CustId FROM #BonusInfo)
+		DELETE #WithdrawalInfo WHERE CustId NOT IN (SELECT CustId FROM #BonusInfo)
+
+		UPDATE b
+		SET b.Amount = b.Amount * e.Rate
+		FROM #BonusInfo b
+			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+
+		UPDATE d
+		SET d.Amount = d.Amount * e.Rate
+		FROM #DepositInfo d
+			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+
+		UPDATE w
+		SET w.Amount = w.Amount * e.Rate
+		FROM #WithdrawalInfo w
+			INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+	END
+
+	DECLARE @RowStart INT, @RowEnd INT
+	SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
+
+	SELECT @NRows = COUNT(1) FROM #BonusInfo
+
+	-- Return
+	SELECT RowId, UserName, @BonusCode AS BonusCode, ClaimedDate, ClaimedAmount, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
+	FROM (
+		SELECT UserName, ClaimedDate, ClaimedAmount, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
+			,ROW_NUMBER() OVER(ORDER BY
+							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN UserName END ASC
+							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN UserName END DESC
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN ClaimedDate END ASC
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN ClaimedDate END DESC
+							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN ClaimedAmount END ASC
+							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN ClaimedAmount END DESC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN TotalDeposit END ASC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN TotalDeposit END DESC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN TotalWithdrawal END ASC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN TotalWithdrawal END DESC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN Status END ASC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN Status END DESC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN PercentagedCompletion END ASC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN PercentagedCompletion END DESC) AS RowId
+		FROM (
+		SELECT c.UserName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
+		FROM dbo.Customer c WITH (NOLOCK)
+			INNER JOIN #BonusInfo b ON b.CustId = c.CustId
+			LEFT JOIN (
+				SELECT d.CustId, SUM(d.Amount) AS Amount
+				FROM #DepositInfo d
+				GROUP BY d.CustId
+			) d ON d.CustId = c.CustId
+			LEFT JOIN (
+				SELECT w.CustId, SUM(w.Amount) AS Amount
+				FROM #WithdrawalInfo w
+				GROUP BY w.CustId
+			) w ON w.CustId = c.CustId
+		) t
+	) r
+	WHERE RowId BETWEEN @RowStart AND @RowEnd
+	ORDER BY RowId
+
+	DROP TABLE #BonusInfo
+	DROP TABLE #DepositInfo
+	DROP TABLE #Exchange
+	DROP TABLE #WithdrawalInfo
+END
+GO
