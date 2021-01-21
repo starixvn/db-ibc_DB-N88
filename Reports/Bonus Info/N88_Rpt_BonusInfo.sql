@@ -122,14 +122,14 @@ BEGIN
 	-- Return detail
 	;WITH CTE_Bonus AS (
 		SELECT b.SiteId, b.BonusCode
-			,SUM(b.Running)			AS Running
-			,SUM(b.Canceled)		AS Canceled
-			,SUM(b.Fulfill)			AS Fulfill
-			,SUM(b.OtherPlatform)	AS OtherPlatform
-			,SUM(b.BetCount)		AS TotalClaimants
-			,SUM(b.Amount)			AS TotalClaimedAmount
-			,SUM(ISNULL(d.Amount, 0)) AS TotalDeposit
-			,SUM(ISNULL(w.Amount, 0)) AS TotalWithdrawal
+			,SUM(b.Running)				AS Running
+			,SUM(b.Canceled)			AS Canceled
+			,SUM(b.Fulfill)				AS Fulfill
+			,SUM(b.OtherPlatform)		AS OtherPlatform
+			,COUNT(DISTINCT b.CustId)	AS TotalClaimants
+			,SUM(b.Amount)				AS TotalClaimedAmount
+			,SUM(ISNULL(d.Amount, 0))	AS TotalDeposit
+			,SUM(ISNULL(w.Amount, 0))	AS TotalWithdrawal
 		FROM
 			(
 				SELECT b.SiteId, b.CustId, b.BonusCode
@@ -137,7 +137,7 @@ BEGIN
 					,SUM(CASE WHEN b.Status = 2 THEN b.BetCount ELSE 0 END) AS Canceled
 					,SUM(CASE WHEN b.Status = 4 THEN b.BetCount ELSE 0 END) AS Fulfill
 					,SUM(CASE WHEN b.Status = 5 THEN b.BetCount ELSE 0 END) AS OtherPlatform
-					,SUM(b.BetCount) AS BetCount, SUM(b.Amount) AS Amount
+					,SUM(b.Amount) AS Amount
 				FROM #BonusInfo b
 				GROUP BY b.SiteId, b.CustId, b.BonusCode
 			) b
@@ -161,19 +161,19 @@ BEGIN
 		INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND b.SiteId = p.SiteId
 
 	-- Return total
-	SELECT Running, Canceled, Fulfill, OtherPlatform, BetCount AS TotalClaimants, Amount AS TotalClaimedAmount, TotalDeposit, TotalWithdrawal
-	FROM (
-			SELECT
-				SUM(CASE WHEN Status = 1 THEN BetCount ELSE 0 END) AS Running
+	;WITH CTE_Bonus AS (
+		SELECT SUM(CASE WHEN Status = 1 THEN BetCount ELSE 0 END) AS Running
 				,SUM(CASE WHEN Status = 2 THEN BetCount ELSE 0 END) AS Canceled
 				,SUM(CASE WHEN Status = 4 THEN BetCount ELSE 0 END) AS Fulfill
 				,SUM(CASE WHEN Status = 5 THEN BetCount ELSE 0 END) AS OtherPlatform
-				,SUM(BetCount) AS BetCount, SUM(Amount) AS Amount
+				,COUNT(DISTINCT CustId) AS TotalClaimants, SUM(Amount) AS Amount
 			FROM #BonusInfo
-		) b
+			GROUP BY SiteId, BonusCode
+	)
+	SELECT Running, Canceled, Fulfill, OtherPlatform, TotalClaimants, Amount AS TotalClaimedAmount, TotalDeposit, TotalWithdrawal
+	FROM (SELECT SUM(Running) AS Running, SUM(Canceled) AS Canceled, SUM(Fulfill) AS Fulfill, SUM(OtherPlatform) AS OtherPlatform, SUM(TotalClaimants) AS TotalClaimants, SUM(Amount) AS Amount FROM CTE_Bonus) b
 		OUTER APPLY (SELECT SUM(Amount) AS TotalDeposit FROM #DepositInfo) d
 		OUTER APPLY (SELECT SUM(Amount) AS TotalWithdrawal FROM #WithdrawalInfo) w
-	WHERE b.BetCount IS NOT NULL
 
 	DROP TABLE #BonusInfo
 	DROP TABLE #DepositInfo
