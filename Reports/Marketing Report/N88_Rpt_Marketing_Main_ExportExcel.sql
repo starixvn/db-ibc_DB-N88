@@ -454,7 +454,6 @@ BEGIN
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N88.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
-			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
@@ -467,7 +466,6 @@ BEGIN
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8G.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N8G.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
-			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
@@ -480,7 +478,6 @@ BEGIN
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8B.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N8B.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
-			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 
 		SELECT ISNULL(SignupUrl, 'None') AS SignupUrl

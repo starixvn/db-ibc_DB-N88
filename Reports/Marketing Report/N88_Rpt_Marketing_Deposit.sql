@@ -99,7 +99,6 @@ BEGIN
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
 			FROM Affiliate_N88.dbo.MemberInfo WITH (NOLOCK)
-			WHERE RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
@@ -111,7 +110,6 @@ BEGIN
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
 			FROM Affiliate_N8G.dbo.MemberInfo WITH (NOLOCK)
-			WHERE RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
@@ -123,7 +121,6 @@ BEGIN
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
 			FROM Affiliate_N8B.dbo.MemberInfo WITH (NOLOCK)
-			WHERE RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 
 		CREATE TABLE #DepositInfo (CustId INT, DepositAmount MONEY, FirstDepositAmount MONEY)
