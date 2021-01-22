@@ -20,6 +20,7 @@ AS
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
 		- 20201215@Percy: Fix sort on Deposit & Withdrawal Amount [RedmineID: #146760]
+		- 20210113@Percy: Add Rebate & Cashback [RedmineID: #148616]
 
 	Param's Explanation:
 		@SortbyId:
@@ -53,19 +54,29 @@ BEGIN
 
 		SELECT  @NRows = COUNT(1)
 		FROM dbo.Customer c WITH (NOLOCK)
-			CROSS APPLY
+			INNER JOIN
 			(
-				SELECT b.BonusCode
-				FROM dbo.BonusInfo b WITH (NOLOCK)
-				WHERE c.CustId = b.CustId
-					AND b.WinlostDate BETWEEN @FDate AND @TDate
-					AND b.SiteId = @SiteId
-					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				GROUP BY b.BonusCode
-			) b
+				SELECT CustId, BonusCode
+				FROM (
+					SELECT CustId, BonusCode
+					FROM dbo.BonusInfo WITH (NOLOCK)
+					WHERE WinlostDate BETWEEN @FDate AND @TDate
+						AND SiteId = @SiteId
+						AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					GROUP BY CustId, BonusCode
+
+					UNION ALL
+					SELECT CustId, BonusCode
+					FROM dbo.RebateMLog WITH (NOLOCK)
+					WHERE WinlostDate BETWEEN @FDate AND @TDate
+						AND SiteId = @SiteId
+						AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					GROUP BY CustId, BonusCode
+				) b
+				GROUP BY CustId, BonusCode
+			) b ON b.CustId = c.CustId
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND b.BonusCode IS NOT NULL
 
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
@@ -112,31 +123,44 @@ BEGIN
 						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN b.BonusAmount END ASC
 						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN b.BonusAmount END DESC) AS RowId
 			FROM dbo.Customer c WITH (NOLOCK)
-				CROSS APPLY (
-					SELECT b.BonusCode, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
-					FROM dbo.BonusInfo b WITH (NOLOCK)
-						INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
-							AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-					WHERE c.CustId = b.CustId
-						AND b.WinlostDate BETWEEN @FDate AND @TDate
-						AND b.SiteId = @SiteId
-						AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					GROUP BY b.BonusCode
-				) b
-				OUTER APPLY
+				INNER JOIN (
+					SELECT CustId, BonusCode, SUM(BonusAmount) AS BonusAmount
+					FROM (
+						SELECT b.CustId, b.BonusCode, SUM(b.BonusAmount * e.Rate / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+						FROM dbo.BonusInfo b WITH (NOLOCK)
+							INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
+								AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+						WHERE b.WinlostDate BETWEEN @FDate AND @TDate
+							AND b.SiteId = @SiteId
+							AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						GROUP BY b.CustId, b.BonusCode
+
+						UNION ALL
+						SELECT r.CustId, r.BonusCode, SUM(r.RedeemAmount * e.Rate / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+						FROM dbo.RebateMLog r WITH (NOLOCK)
+							INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId
+								AND CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+						WHERE r.WinlostDate BETWEEN @FDate AND @TDate
+							AND r.SiteId = @SiteId
+							AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						GROUP BY r.CustId, r.BonusCode
+					) b
+					GROUP BY CustId, BonusCode
+				) b ON b.CustId = c.CustId
+				LEFT JOIN
 				(
-					SELECT SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmount
+					SELECT d.CustId, SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmount
 					FROM #DepositInfo d
 						INNER JOIN #Exchange e ON d.WinlostDate BETWEEN e.FromDate AND e.ToDate AND d.CurrencyId = e.ExchangeId
-					WHERE c.CustId = d.CustId
-				) d
-				OUTER APPLY
+					GROUP BY d.CustId
+				) d ON d.CustId = c.CustId
+				LEFT JOIN
 				(
-					SELECT SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
+					SELECT w.CustId, SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
 					FROM #WithdrawalInfo w
 						INNER JOIN #Exchange e ON w.WinlostDate BETWEEN e.FromDate AND e.ToDate AND w.CurrencyId = e.ExchangeId
-					WHERE c.CustId = w.CustId
-				) w
+					GROUP BY w.CustId
+				) w ON w.CustId = c.CustId
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
 		) t

@@ -19,6 +19,7 @@ AS
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" and sort - [RedmineID: #147542]
+		- 20210113@Percy: Add Rebate & Cashback + 'APP' signup url [RedmineID: #148616]
 */
 
 BEGIN
@@ -273,6 +274,19 @@ BEGIN
 				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			GROUP BY b.CustId, b.BonusCode
 
+			INSERT INTO #BonusUsers (CustId, BonusCode, BonusClaimed, IsDateRange, IsMTD)
+			SELECT r.CustId, r.BonusCode
+				,SUM(r.RedeemAmount * e.Rate)
+				,1 AS IsDateRange
+				,0 AS IsMTD
+			FROM dbo.RebateMLog r WITH (NOLOCK)
+				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId
+					AND CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+			WHERE r.SiteId = @SiteId
+				AND r.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
+				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			GROUP BY r.CustId, r.BonusCode
+
 			-- Month to date
 			INSERT INTO #BonusUsers (CustId, BonusCode, BonusClaimed, IsDateRange, IsMTD)
 			SELECT b.CustId, b.BonusCode
@@ -286,6 +300,19 @@ BEGIN
 				AND b.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
 				AND b.CreateTime >= @BeginCurrentMonthGMT AND b.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
 			GROUP BY b.CustId, b.BonusCode
+
+			INSERT INTO #BonusUsers (CustId, BonusCode, BonusClaimed, IsDateRange, IsMTD)
+			SELECT r.CustId, r.BonusCode
+				,SUM(r.RedeemAmount * e.Rate)
+				,0 AS IsDateRange
+				,1 AS IsMTD
+			FROM dbo.RebateMLog r WITH (NOLOCK)
+				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId
+					AND CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+			WHERE r.SiteId = @SiteId
+				AND r.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
+				AND r.CreateTime >= @BeginCurrentMonthGMT AND r.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
+			GROUP BY r.CustId, r.BonusCode
 
 		-- Main data
 		SELECT
@@ -411,17 +438,14 @@ BEGIN
 		SELECT Name, NameVN, DateRange, MonthToDate, AllRange, DataType FROM @tempData
 
 		-- Registration Details
-		DECLARE @DefaultSignupUrl VARCHAR(200)
-		SELECT  @DefaultSignupUrl = CASE @SiteId
-										WHEN 3 THEN 'www.bwing.com'
-										END
-
+		DECLARE @DefaultSignupUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
 		DECLARE @CreditAgentName VARCHAR(30) = ''
 		DECLARE @MainUrls TABLE (Url VARCHAR(200))
 		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
 
 		IF @SiteId = 1
 		BEGIN
+			SELECT @APPSignupUrl = 'app.nova88.net'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
@@ -434,7 +458,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
-			SELECT @CreditAgentName = 'Goal123Ref01'
+			SELECT @CreditAgentName = 'Goal123Ref01', @APPSignupUrl = 'app.goal123.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.goal123.com'), ('m.goal123.com')
@@ -447,7 +471,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
-			SELECT @CreditAgentName = 'BwingRef01'
+			SELECT @CreditAgentName = 'BwingRef01', @APPSignupUrl = 'app.bwing.com', @DefaultSignupUrl = 'www.bwing.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.bwing.com'), ('m.bwing.com')
@@ -468,16 +492,18 @@ BEGIN
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
-					WHEN ag.UserName = @CreditAgentName THEN 3
+					WHEN ag.UserName = @CreditAgentName THEN 4
 					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1
-					WHEN cg.CustId IS NOT NULL THEN 4
-					ELSE 5 END AS OrderCol
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
+					WHEN cg.CustId IS NOT NULL THEN 5
+					ELSE 6 END AS OrderCol
 			FROM dbo.Customer c WITH (NOLOCK)
 				INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
 				LEFT JOIN #Affiliate a ON c.CustId = a.CustId
@@ -490,13 +516,15 @@ BEGIN
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END
-				, CASE
+				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
-					WHEN ag.UserName = @CreditAgentName THEN 3
+					WHEN ag.UserName = @CreditAgentName THEN 4
 					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1
-					WHEN cg.CustId IS NOT NULL THEN 4
-					ELSE 5 END
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
+					WHEN cg.CustId IS NOT NULL THEN 5
+					ELSE 6 END
 		) r
 		ORDER BY r.OrderCol, r.SignupUrl
 	END

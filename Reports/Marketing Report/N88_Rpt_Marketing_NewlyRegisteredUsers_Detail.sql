@@ -21,6 +21,7 @@ AS
 		- 20200818@Percy: Initialize SP [RedmineID: #137395]
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
+		- 20210113@Percy: Add 'APP' signup url [RedmineID: #148616]
 
 	Param's Explanation:
 		@SortbyId:
@@ -66,16 +67,14 @@ BEGIN
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
 
 		-- Detail by Campaign
-		DECLARE @DefaultSignupUrl VARCHAR(200)
-		SELECT  @DefaultSignupUrl = CASE @SiteId
-										WHEN 3 THEN 'www.bwing.com'
-										END
-
+		DECLARE @DefaultSignupUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
 		DECLARE @CreditAgentName VARCHAR(30) = ''
 		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
 
 		IF @SiteId = 1
 		BEGIN
+			SELECT @APPSignupUrl = 'app.nova88.net'
+
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
@@ -84,7 +83,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
-			SELECT @CreditAgentName = 'Goal123Ref01'
+			SELECT @CreditAgentName = 'Goal123Ref01', @APPSignupUrl = 'app.goal123.com'
 
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
@@ -94,7 +93,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
-			SELECT @CreditAgentName = 'BwingRef01'
+			SELECT @CreditAgentName = 'BwingRef01', @APPSignupUrl = 'app.bwing.com', @DefaultSignupUrl = 'www.bwing.com'
 
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
@@ -125,6 +124,7 @@ BEGIN
 						WHEN a.CustId IS NOT NULL THEN a.AffName
 						WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 						WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3 THEN @DefaultSignupUrl
+						WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 						ELSE cg.SignupUrl END AS SignupUrl
 					,CASE WHEN d.Amount IS NULL THEN 0 ELSE 1 END AS IsDeposit
 					,d.Amount AS FirstDepositAmount

@@ -21,6 +21,7 @@ AS
 		- 20200928@Percy: Add Deposit Amount, Withdrawal Amount, Bonus Users [RedmineID: #141575]
 		- 20201029@Percy: Change Bonus User to Bonus Amount [RedmineID: #143879]
 		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
+		- 20210113@Percy: Add Rebate & Cashback [RedmineID: #148616]
 */
 
 BEGIN
@@ -167,6 +168,16 @@ BEGIN
 				AND b.SiteId = @SiteId
 				AND c.IsTest = 0
 
+			SELECT @BonusAmountClaimeds = ISNULL(@BonusAmountClaimeds, 0) + ISNULL(SUM(r.RedeemAmount * e.Rate / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END), 0)
+			FROM dbo.RebateMLog r WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId
+					AND CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND c.IsTest = 0
+
 			--newly active registered users
 			SELECT @NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
 			FROM (
@@ -272,6 +283,16 @@ BEGIN
 			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 				AND b.SiteId = @SiteId
+				AND c.IsTest = 0
+
+			SELECT @CompareBonusAmountClaimeds = ISNULL(@CompareBonusAmountClaimeds, 0) + ISNULL(SUM(r.RedeemAmount * e.Rate / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END), 0)
+			FROM dbo.RebateMLog r WITH (NOLOCK)
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId
+					AND CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND r.CreateTime >= @CompareFromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+				AND r.SiteId = @SiteId
 				AND c.IsTest = 0
 
 			--compare newly active registered users
