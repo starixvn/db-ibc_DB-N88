@@ -454,7 +454,6 @@ BEGIN
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N88.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
-			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
@@ -467,7 +466,6 @@ BEGIN
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8G.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N8G.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
-			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
@@ -480,7 +478,6 @@ BEGIN
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8B.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N8B.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
-			WHERE mi.RegisteredDate <= DATEADD(DAY, 1, @ToDate)
 		END
 
 		SELECT ISNULL(SignupUrl, 'None') AS SignupUrl
@@ -488,12 +485,12 @@ BEGIN
 			,SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
 		FROM (
 			SELECT
-				CASE
+				CAST((CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
-					ELSE cg.SignupUrl END AS SignupUrl
+					ELSE cg.SignupUrl END) AS NVARCHAR(200)) AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
