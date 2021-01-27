@@ -60,7 +60,7 @@ BEGIN
 		IF EXISTS (SELECT 1 FROM bodb02.dbo.strSplit(@BonusTypeIds, ',') WHERE val IN ('1', '2', '3'))
 			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, Status, ExchangeDate, ExchangeGGRDate, BetCount, Amount, GGR)
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)), b.BonusCode, b.CustId, b.CurrencyId, b.Status, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)), CONVERT(DATE, DATEADD(HOUR, -4, tb.SettledTime))
-				,COUNT(1) AS BetCount, SUM(b.BonusAmount) AS Amount, SUM(ISNULL(tb.WinlostAmount, 0))
+				,COUNT(1) AS BetCount, SUM(b.BonusAmount) AS Amount, -SUM(ISNULL(tb.WinlostAmount, 0))
 			FROM dbo.BonusInfo b WITH (NOLOCK)
 				LEFT JOIN dbo.TpBetRecord tb WITH (NOLOCK)
 					ON		b.BonusId = tb.BonusId
