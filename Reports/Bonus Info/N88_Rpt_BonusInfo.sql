@@ -142,14 +142,14 @@ BEGIN
 	IF @GroupBy = 1 -- Bonus Code
 	BEGIN
 		;WITH CTE_Bonus AS (
-			SELECT b.BonusCode
-				,SUM(b.Running)				AS Running
-				,SUM(b.Canceled)			AS Canceled
-				,SUM(b.Fulfill)				AS Fulfill
-				,SUM(b.OtherPlatform)		AS OtherPlatform
+			SELECT ISNULL(b.BonusCode, '')			AS BonusCode
+				,SUM(ISNULL(b.Running, 0))			AS Running
+				,SUM(ISNULL(b.Canceled, 0))			AS Canceled
+				,SUM(ISNULL(b.Fulfill, 0))			AS Fulfill
+				,SUM(ISNULL(b.OtherPlatform, 0))	AS OtherPlatform
 				,COUNT(DISTINCT b.CustId)	AS TotalClaimants
-				,SUM(b.Amount)				AS TotalClaimedAmount
-				,SUM(b.GGR)					AS GGR
+				,SUM(ISNULL(b.Amount, 0))	AS TotalClaimedAmount
+				,SUM(ISNULL(b.GGR, 0))		AS GGR
 				,SUM(ISNULL(d.Amount, 0))	AS TotalDeposit
 				,SUM(ISNULL(w.Amount, 0))	AS TotalWithdrawal
 			FROM
@@ -164,30 +164,30 @@ BEGIN
 					FROM #BonusInfo b
 					GROUP BY b.CustId, b.BonusCode
 				) b
-				LEFT JOIN (
+				FULL OUTER JOIN (
 					SELECT d.CustId, SUM(d.Amount) AS Amount
 					FROM #DepositInfo d
 					GROUP BY d.CustId
 				) d ON d.CustId = b.CustId
-				LEFT JOIN (
+				FULL OUTER JOIN (
 					SELECT w.CustId, SUM(w.Amount) AS Amount
 					FROM #WithdrawalInfo w
 					GROUP BY w.CustId
 				) w ON w.CustId = b.CustId
-			GROUP BY b.BonusCode
+			GROUP BY ISNULL(b.BonusCode, '')
 		)
 		SELECT CONVERT(DATE, @FromDate) AS Date, p.Description AS BonusName, p.BonusCode, p.PromotionType AS BonusType, p.Status AS BonusStatus
 			,DATEADD(HOUR, @TimeZone, p.StartDate) AS StartDate
 			,DATEADD(HOUR, @TimeZone, p.EndDate) AS EndDate
 			,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.GGR, b.TotalDeposit, b.TotalWithdrawal
 		FROM CTE_Bonus b
-			INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
+			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
 	END
 	ELSE IF @GroupBy = 2 -- Date, Bonus Code
 	BEGIN
 		;WITH CTE_Bonus AS (
 			SELECT CONVERT(DATE, ISNULL(ISNULL(b.Date, d.Date), w.Date)) AS Date
-				,b.BonusCode
+				,ISNULL(b.BonusCode, '')			AS BonusCode
 				,SUM(ISNULL(b.Running, 0))			AS Running
 				,SUM(ISNULL(b.Canceled, 0))			AS Canceled
 				,SUM(ISNULL(b.Fulfill, 0))			AS Fulfill
@@ -226,7 +226,7 @@ BEGIN
 			,DATEADD(HOUR, @TimeZone, p.EndDate) AS EndDate
 			,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.GGR, b.TotalDeposit, b.TotalWithdrawal
 		FROM CTE_Bonus b
-			INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
+			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
 		ORDER BY b.Date, p.Description
 	END
 
