@@ -36,7 +36,7 @@ BEGIN
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
-	CREATE TABLE #BonusInfo (Date DATE, BonusCode VARCHAR(50), CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, BetCount INT, Amount MONEY, ExchangeGGRDate DATE, GGR MONEY)
+	CREATE TABLE #BonusInfo (Date DATE, BonusCode VARCHAR(50), CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, BetCount INT, Amount MONEY, GGR MONEY)
 	CREATE TABLE #DepositInfo (Date DATE, CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (Date DATE, CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 
@@ -58,21 +58,25 @@ BEGIN
 		
 		-- Get data
 		IF EXISTS (SELECT 1 FROM bodb02.dbo.strSplit(@BonusTypeIds, ',') WHERE val IN ('1', '2', '3'))
-			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, Status, ExchangeDate, ExchangeGGRDate, BetCount, Amount, GGR)
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)), b.BonusCode, b.CustId, b.CurrencyId, b.Status, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)), CONVERT(DATE, DATEADD(HOUR, -4, tb.SettledTime))
+			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, Status, ExchangeDate, BetCount, Amount, GGR)
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)), b.BonusCode, b.CustId, b.CurrencyId, b.Status, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime))
 				,COUNT(1) AS BetCount, SUM(b.BonusAmount) AS Amount, -SUM(ISNULL(tb.WinlostAmount, 0))
 			FROM dbo.BonusInfo b WITH (NOLOCK)
-				LEFT JOIN dbo.TpBetRecord tb WITH (NOLOCK)
-					ON		b.BonusId = tb.BonusId
+				OUTER APPLY (
+					SELECT SUM(tb.WinlostAmount * e.Rate) AS WinlostAmount
+					FROM dbo.TpBetRecord tb WITH (NOLOCK)
+						INNER JOIN #Exchange e ON tb.CurrencyId = e.ExchangeId AND CONVERT(DATE, DATEADD(HOUR, -4, tb.CreateTime)) BETWEEN e.FromDate AND e.ToDate
+					WHERE	b.BonusId = tb.BonusId
 						AND tb.SettlementType IN (1, 3)
 						AND tb.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 						AND CONVERT(DATE, DATEADD(HOUR, @TimeZone, tb.SettledTime)) = CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime))
+				) tb
 			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND b.SiteId = @SiteId
 				AND ',' + @BonusTypeIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.PromotionType) + ',%'
 				AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)), b.BonusCode, b.CustId, b.CurrencyId, b.Status, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)), CONVERT(DATE, DATEADD(HOUR, -4, tb.SettledTime))
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)), b.BonusCode, b.CustId, b.CurrencyId, b.Status, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime))
 		
 		IF EXISTS (SELECT 1 FROM bodb02.dbo.strSplit(@BonusTypeIds, ',') WHERE val IN ('6', '7'))
 			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, ExchangeDate, BetCount, Amount, GGR)
@@ -121,11 +125,6 @@ BEGIN
 		SET b.Amount = b.Amount * e.Rate
 		FROM #BonusInfo b
 			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-
-		UPDATE b
-		SET b.GGR = b.GGR * e.Rate
-		FROM #BonusInfo b
-			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeGGRDate BETWEEN e.FromDate AND e.ToDate
 
 		UPDATE d
 		SET d.Amount = d.Amount * e.Rate
