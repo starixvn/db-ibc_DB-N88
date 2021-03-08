@@ -20,6 +20,7 @@ AS
 		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" and sort - [RedmineID: #147542]
 		- 20210113@Percy: Add Rebate & Cashback + 'APP' signup url [RedmineID: #148616]
+		- 20210301@Percy: Change date range on MTD column + translate of Credit [RedmineID: #150398]
 */
 
 BEGIN
@@ -27,7 +28,7 @@ BEGIN
 	
 	DECLARE @SiteId INT
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
-	DECLARE @BeginCurrentMonth DATETIME, @EndCurrentMonth DATETIME, @BeginCurrentMonthGMT DATETIME, @EndCurrentMonthGMT DATETIME
+	DECLARE @FromDateMTD DATETIME, @ToDateMTD DATETIME, @FromDateMTDGMT DATETIME, @ToDateMTDGMT DATETIME
 	DECLARE @OfficialLaunchDate DATETIME, @OfficialLaunchDateGMT DATETIME
 
 	DECLARE @NoOfUsers						INT
@@ -84,14 +85,14 @@ BEGIN
 										ELSE '1970-01-01' -- Get all
 										END -- GMT+8
 
-		SELECT @BeginCurrentMonth = DATEADD(MONTH, DATEDIFF(MONTH, 0, DATEADD(HOUR, 4 + @TimeZone, GETDATE())), 0)
-		SELECT @EndCurrentMonth = DATEADD(DAY, -1, DATEADD(MONTH, 1, @BeginCurrentMonth))
+		SELECT @FromDateMTD = DATEADD(MONTH, DATEDIFF(MONTH, 0, DATEADD(HOUR, 4 + @TimeZone, GETDATE() - 1)), 0)
+		SELECT @ToDateMTD = CONVERT(DATE, DATEADD(HOUR, 4 + @TimeZone, GETDATE() - 1))
 
 		-- Data on GMT+0 --> convert timezone
 		SELECT  @FromDateTimeGMT		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 				,@ToDateTimeGMT			= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
-				,@BeginCurrentMonthGMT	= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @BeginCurrentMonth))
-				,@EndCurrentMonthGMT	= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @EndCurrentMonth))
+				,@FromDateMTDGMT	= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDateMTD))
+				,@ToDateMTDGMT	= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDateMTD))
 				,@OfficialLaunchDateGMT	= DATEADD(HOUR, -8, @OfficialLaunchDate) -- GMT+8
 
 		DECLARE @FDate DATE, @TDate DATE
@@ -133,16 +134,16 @@ BEGIN
 				EXISTS (
 					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
-						AND r.TransDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-						AND r.TransDateGMT BETWEEN @BeginCurrentMonth AND @EndCurrentMonth
+						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
+						AND r.TransDateGMT BETWEEN @FromDateMTD AND @ToDateMTD
 						AND r.TimeZone = @TimeZone
 						AND r.LicenseeId = @LicenseeId
 				)
 				OR EXISTS (
 					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
 					WHERE c.CustId = t.CustId
-						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-						AND t.CreateTime >= @BeginCurrentMonthGMT AND t.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
+						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
+						AND t.CreateTime >= @FromDateMTDGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateMTDGMT)
 						AND t.SiteId = @SiteId
 				)
 			)
@@ -170,7 +171,7 @@ BEGIN
 				)
 			)
 
-		SELECT @MTD_NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @BeginCurrentMonthGMT AND RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END)
+		SELECT @MTD_NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateMTDGMT AND RegTime < DATEADD(DAY, 1, @ToDateMTDGMT) THEN 1 ELSE NULL END)
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
@@ -178,16 +179,16 @@ BEGIN
 				EXISTS (
 					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
-						AND r.TransDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-						AND r.TransDateGMT BETWEEN @BeginCurrentMonth AND @EndCurrentMonth
+						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
+						AND r.TransDateGMT BETWEEN @FromDateMTD AND @ToDateMTD
 						AND r.TimeZone = @TimeZone
 						AND r.LicenseeId = @LicenseeId
 				)
 				OR EXISTS (
 					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
 					WHERE c.CustId = t.CustId
-						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-						AND t.CreateTime >= @BeginCurrentMonthGMT AND t.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
+						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
+						AND t.CreateTime >= @FromDateMTDGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateMTDGMT)
 						AND t.SiteId = @SiteId
 				)
 			)
@@ -200,7 +201,7 @@ BEGIN
 			,SUM(d.Deposit * e.Rate)
 			,SUM(d.FirstDeposit * e.Rate)
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
-			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate BETWEEN @FromDateMTD AND @ToDateMTD THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 		FROM (
 			SELECT
@@ -223,7 +224,7 @@ BEGIN
 		GROUP BY
 			d.CustId
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
-			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate BETWEEN @FromDateMTD AND @ToDateMTD THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 
 		-- Withdrawal
@@ -233,7 +234,7 @@ BEGIN
 			d.CustId
 			,SUM(d.Withdrawal * e.Rate)
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
-			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate BETWEEN @FromDateMTD AND @ToDateMTD THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 		FROM (
 			SELECT
@@ -255,7 +256,7 @@ BEGIN
 		GROUP BY
 			d.CustId
 			,CASE WHEN d.WinlostDate BETWEEN @FromDate AND @ToDate THEN 1 ELSE 0 END
-			,CASE WHEN d.WinlostDate BETWEEN @BeginCurrentMonth AND @EndCurrentMonth THEN 1 ELSE 0 END
+			,CASE WHEN d.WinlostDate BETWEEN @FromDateMTD AND @ToDateMTD THEN 1 ELSE 0 END
 			,CASE WHEN d.WinlostDate >= @OfficialLaunchDate THEN 1 ELSE 0 END
 
 		-- Bonus
@@ -297,8 +298,8 @@ BEGIN
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId
 					AND CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) BETWEEN e.FromDate AND e.ToDate
 			WHERE b.SiteId = @SiteId
-				AND b.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-				AND b.CreateTime >= @BeginCurrentMonthGMT AND b.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
+				AND b.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
+				AND b.CreateTime >= @FromDateMTDGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateMTDGMT)
 			GROUP BY b.CustId, b.BonusCode
 
 			INSERT INTO #BonusUsers (CustId, BonusCode, BonusClaimed, IsDateRange, IsMTD)
@@ -310,16 +311,16 @@ BEGIN
 				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId
 					AND CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) BETWEEN e.FromDate AND e.ToDate
 			WHERE r.SiteId = @SiteId
-				AND r.WinlostDate BETWEEN DATEADD(DAY, -1, @BeginCurrentMonth) AND DATEADD(DAY, 1, @EndCurrentMonth)
-				AND r.CreateTime >= @BeginCurrentMonthGMT AND r.CreateTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)
+				AND r.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
+				AND r.CreateTime >= @FromDateMTDGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateMTDGMT)
 			GROUP BY r.CustId, r.BonusCode
 
 		-- Main data
 		SELECT
 			@NoOfUsers						= COUNT(CASE WHEN c.RegTime > @OfficialLaunchDateGMT	AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)			THEN 1 ELSE NULL END)
-			,@MTD_NoOfUsers					= COUNT(CASE WHEN c.RegTime > @OfficialLaunchDateGMT	AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)	THEN 1 ELSE NULL END)
+			,@MTD_NoOfUsers					= COUNT(CASE WHEN c.RegTime > @OfficialLaunchDateGMT	AND c.RegTime < DATEADD(DAY, 1, @ToDateMTDGMT)	THEN 1 ELSE NULL END)
 			,@NewlyRegisterUsers			= COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT			AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)			THEN 1 ELSE NULL END)
-			,@MTD_NewlyRegisterUsers		= COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT	AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT)	THEN 1 ELSE NULL END)
+			,@MTD_NewlyRegisterUsers		= COUNT(CASE WHEN c.RegTime >= @FromDateMTDGMT	AND c.RegTime < DATEADD(DAY, 1, @ToDateMTDGMT)	THEN 1 ELSE NULL END)
 			,@BonusClaimedAmount			= SUM(ISNULL(b.BonusClaimed, 0))
 			,@MTD_BonusClaimedAmount		= SUM(ISNULL(b.MTD_BonusClaimed, 0))
 			,@NoOfDepositUsers				= SUM(ISNULL(d.DepositUsers, 0))
@@ -481,7 +482,7 @@ BEGIN
 		END
 
 		SELECT ISNULL(SignupUrl, 'None') AS SignupUrl
-			,CASE WHEN SignupUrl = 'Bong88/Viva88' THEN N'Trang trả trước' ELSE ISNULL(SignupUrl, N'Không xác định') END AS SignupUrlVN
+			,ISNULL(SignupUrl, N'Không xác định') AS SignupUrlVN
 			,SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
 		FROM (
 			SELECT
@@ -492,7 +493,7 @@ BEGIN
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END) AS NVARCHAR(200)) AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
-				,COUNT(CASE WHEN c.RegTime >= @BeginCurrentMonthGMT AND c.RegTime < DATEADD(DAY, 1, @EndCurrentMonthGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
+				,COUNT(CASE WHEN c.RegTime >= @FromDateMTDGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateMTDGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
