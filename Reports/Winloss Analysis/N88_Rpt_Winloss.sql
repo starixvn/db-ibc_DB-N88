@@ -36,6 +36,7 @@ AS
 		- 20201223@Sol: Add new columns to report - [RedmineID: #147542]
 		- 20210113@Sol: group by player - group wl and dep/wit into one row - [RedmineID: #147542]
 		- 20210223@Percy: Change data source from N88_RptWinloss to N88_SumWinloss to support all time zones [RedmineID: #150398]
+		- 20210316@Percy: Include free bet tickets into No draw option [RedmineID: #146210]
 
 	Param's Explanation:
 		@SortbyId:
@@ -161,7 +162,7 @@ BEGIN
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND 1 = 
 						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2) THEN 1
+							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
 							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
 							ELSE 0
 						END
@@ -241,7 +242,7 @@ BEGIN
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND 1 = 
 						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2) THEN 1
+							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
 							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
 							ELSE 0
 						END
