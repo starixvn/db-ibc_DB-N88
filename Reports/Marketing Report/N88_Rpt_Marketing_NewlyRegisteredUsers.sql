@@ -19,6 +19,9 @@ AS
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
 		- 20210113@Percy: Add 'APP' signup url [RedmineID: #148616]
+		- 20210401@Percy: [RedmineID: #150876]
+			1. Add Total Total Deposit Amount, Bonus Name columns
+			2. Add new group Nova88.com for SigupUrl
 */
 
 BEGIN
@@ -56,37 +59,55 @@ BEGIN
 			AND SiteId = @SiteId
 			AND IsTest = 0
 
-		SELECT @NewlyRegisterUsers AS NewlyRegisterUsers
-				,@CompareNewlyRegisterUsers AS CompareNewlyRegisterUsers
+		-- Summary
+		SELECT @NewlyRegisterUsers AS NewlyRegisterUsers, @CompareNewlyRegisterUsers AS CompareNewlyRegisterUsers
 
+		-- Detail by Campaign
 		DECLARE @FDate DATE, @TDate DATE
 		SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		
+		CREATE TABLE #BonusInfo (CustId INT, BonusCode VARCHAR(50), BonusName VARCHAR(300))
+		INSERT INTO #BonusInfo (CustId, BonusCode, BonusName)
+		SELECT b.CustId, b.BonusCode, p.Description AS BonusName
+		FROM dbo.BonusInfo b WITH (NOLOCK)
+			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
+		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
+			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND b.SiteId = @SiteId
 
-		-- Detail by Campaign
-		SELECT b.BonusCode, COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.Amount, 0)) AS FirstDepositAmount
+		INSERT INTO #BonusInfo (CustId, BonusCode, BonusName)
+		SELECT b.CustId, b.BonusCode, p.Description AS BonusName
+		FROM dbo.RebateMLog b WITH (NOLOCK)
+			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
+		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
+			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND b.SiteId = @SiteId
+
+		CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY)
+		INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount)
+		SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate)
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, CustId, CurrencyId
+				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
+				,SUM(Amount) AS TotalDepositAmount
+			FROM dbo.DepositInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND Status = 3 -- Approved
+				AND SiteId = @SiteId
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), CustId, CurrencyId
+		) d
+			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY d.CustId
+		
+		SELECT b.BonusCode, COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
 		FROM dbo.Customer c WITH (NOLOCK)
-			OUTER APPLY
-			(
-				SELECT b.CustId, b.BonusCode
-				FROM dbo.BonusInfo b WITH (NOLOCK)
-				WHERE c.CustId = b.CustId
-					AND b.WinlostDate BETWEEN @FDate AND @TDate
-					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			) b
-			OUTER APPLY
-			(
-				SELECT d.CustId, d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END AS Amount
-				FROM dbo.DepositInfo d WITH (NOLOCK)
-					INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
-						AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-				WHERE c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
-					AND d.WinlostDate BETWEEN @FDate AND @TDate
-					AND d.CreateTime >= @FromDateTimeGMT AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			) d
+			LEFT JOIN #BonusInfo b ON c.CustId = b.CustId
+			LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
 		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
@@ -135,6 +156,7 @@ BEGIN
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
@@ -142,25 +164,17 @@ BEGIN
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				ELSE cg.SignupUrl END AS SignupUrl
-			,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.Amount, 0)) AS FirstDepositAmount
+			,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
 		FROM dbo.Customer c WITH (NOLOCK)
 			INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
 			LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
 			LEFT JOIN #Affiliate a ON c.CustId = a.CustId
 			LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
-			OUTER APPLY
-			(
-				SELECT d.CustId, d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END AS Amount
-				FROM dbo.DepositInfo d WITH (NOLOCK)
-					INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
-						AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-				WHERE c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
-					AND d.WinlostDate BETWEEN @FDate AND @TDate
-					AND d.CreateTime >= @FromDateTimeGMT AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			) d
+			LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
 		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
@@ -168,6 +182,7 @@ BEGIN
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
@@ -175,11 +190,14 @@ BEGIN
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				ELSE cg.SignupUrl END
 
 		DROP TABLE #Affiliate
+		DROP TABLE #BonusInfo
+		DROP TABLE #DepositInfo
 		DROP TABLE #Exchange
 	END
 END

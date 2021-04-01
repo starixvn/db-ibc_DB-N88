@@ -19,6 +19,7 @@ AS
 
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
+		- 20210401@Percy: Add Currency column [RedmineID: #150876]
 
 	Param's Explanation:
 		@SortbyId:
@@ -66,45 +67,46 @@ BEGIN
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
 		
 		DECLARE @RowStart INT, @RowEnd INT
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
 
 		-- Detail by User
-		CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, WinlostDate DATE, Amount MONEY, BetCount INT)
-		INSERT INTO #WithdrawalInfo (CustId, CurrencyId, WinlostDate, Amount, BetCount)
-		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount), COUNT(1)
-		FROM dbo.WithdrawalInfo WITH (NOLOCK)
-		WHERE WinlostDate BETWEEN @FDate AND @TDate
-			AND SiteId = @SiteId
-			AND Status = 6
-			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-
-		SELECT RowId, UserName, RegTime, BetCount, WithdrawalAmount
+		CREATE TABLE #WithdrawalInfo (CustId INT, Amount MONEY, BetCount INT)
+		INSERT INTO #WithdrawalInfo (CustId, Amount, BetCount)
+		SELECT w.CustId, SUM(w.Amount * e.Rate), SUM(w.BetCount)
 		FROM (
-			SELECT c.UserName, DATEADD(HOUR, @Timezone, c.RegTime) AS RegTime, BetCount, WithdrawalAmount
+			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(Amount) AS Amount, COUNT(1) AS BetCount
+			FROM dbo.WithdrawalInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND SiteId = @SiteId
+				AND Status = 6
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+		) w
+			INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY w.CustId
+
+		SELECT RowId, UserName, Currency, RegTime, NoOfWithdrawals, TotalWithdrawalAmount
+		FROM (
+			SELECT c.UserName, e.Code AS Currency, DATEADD(HOUR, @Timezone, c.RegTime) AS RegTime, w.BetCount AS NoOfWithdrawals, w.Amount AS TotalWithdrawalAmount
 				,ROW_NUMBER() OVER(ORDER BY
 						 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN c.Username END ASC
 						,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN c.Username END DESC
 						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN c.RegTime END ASC
 						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN c.RegTime END DESC
-						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN w.BetCount END ASC
-						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN w.BetCount END DESC
-						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN w.WithdrawalAmount END ASC
-						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN w.WithdrawalAmount END DESC) AS RowId
+						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN c.RegTime END ASC
+						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN c.RegTime END DESC
+						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN w.BetCount END ASC
+						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN w.BetCount END DESC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN w.Amount END ASC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN w.Amount END DESC) AS RowId
 			FROM dbo.Customer c WITH (NOLOCK)
-				CROSS APPLY
-				(
-					SELECT SUM(BetCount) AS BetCount, SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
-					FROM #WithdrawalInfo w
-						INNER JOIN #Exchange e ON w.WinlostDate BETWEEN e.FromDate AND e.ToDate AND w.CurrencyId = e.ExchangeId
-					WHERE c.CustId = w.CustId
-				) w
+				INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
+				INNER JOIN #WithdrawalInfo w ON c.CustId = w.CustId
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
-				AND ISNULL(w.BetCount, 0) > 0
 		) r
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 

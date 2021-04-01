@@ -22,15 +22,18 @@ AS
 		- 20201215@Percy: View detail Signup URL by Credit Site [RedmineID: #146760]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
 		- 20210113@Percy: Add 'APP' signup url [RedmineID: #148616]
+		- 20210401@Percy: Add Currency, Aff Code columns [RedmineID: #150876]
 
 	Param's Explanation:
 		@SortbyId:
-			. 1 = Campaign
-			. 2 = Username
+			. 1 = Username
+			. 2 = Currency
 			. 3 = Registered Date
 			. 4 = Signup URL
-			. 5 = Deposit
+			. 5 = Aff Code
 			. 6 = First Deposit Amount
+			. 7 = Number of Deposits
+			. 8 = Total Deposit Amount
 */
 
 BEGIN
@@ -55,14 +58,14 @@ BEGIN
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
 		
-		CREATE TABLE #DepositInfo (CustId INT, NoOfDeposits INT, DepositAmount MONEY, FirstDepositAmount MONEY)
+		CREATE TABLE #DepositInfo (CustId INT, NoOfDeposits INT, TotalDepositAmount MONEY, FirstDepositAmount MONEY)
 		
 		;WITH CTE_DepositInfo AS (
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 				,COUNT(1) AS NoOfDeposits
-				,SUM(Amount) AS DepositAmount
+				,SUM(Amount) AS TotalDepositAmount
 				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
 			FROM dbo.DepositInfo WITH (NOLOCK)
 			WHERE CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
@@ -70,11 +73,8 @@ BEGIN
 				AND Status = 3
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		)
-		INSERT INTO #DepositInfo (CustId, NoOfDeposits, DepositAmount, FirstDepositAmount)
-		SELECT CustId
-			,SUM(NoOfDeposits)
-			,SUM(DepositAmount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
-			,SUM(FirstDepositAmount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
+		INSERT INTO #DepositInfo (CustId, NoOfDeposits, TotalDepositAmount, FirstDepositAmount)
+		SELECT CustId, SUM(NoOfDeposits), SUM(TotalDepositAmount * e.Rate), SUM(FirstDepositAmount * e.Rate)
 		FROM CTE_DepositInfo d
 			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY CustId
@@ -90,14 +90,14 @@ BEGIN
 		-- Detail by Campaign
 		DECLARE @DefaultSignupUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
 		DECLARE @CreditAgentName VARCHAR(30) = ''
-		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
+		CREATE TABLE #Affiliate (CustId INT, AffCode VARCHAR(20))
 
 		IF @SiteId = 1
 		BEGIN
 			SELECT @APPSignupUrl = 'app.nova88.net'
 
-			INSERT INTO #Affiliate (CustId, AffName)
-			SELECT mi.CustId, ai.UserName
+			INSERT INTO #Affiliate (CustId, AffCode)
+			SELECT mi.CustId, ai.AffCode
 			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N88.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
 		END
@@ -105,8 +105,8 @@ BEGIN
 		BEGIN
 			SELECT @CreditAgentName = 'Goal123Ref01', @APPSignupUrl = 'app.goal123.com'
 
-			INSERT INTO #Affiliate (CustId, AffName)
-			SELECT mi.CustId, ai.UserName
+			INSERT INTO #Affiliate (CustId, AffCode)
+			SELECT mi.CustId, ai.AffCode
 			FROM Affiliate_N8G.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N8G.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
 		END
@@ -114,42 +114,49 @@ BEGIN
 		BEGIN
 			SELECT @CreditAgentName = 'BwingRef01', @APPSignupUrl = 'app.bwing.com', @DefaultSignupUrl = 'www.bwing.com'
 
-			INSERT INTO #Affiliate (CustId, AffName)
-			SELECT mi.CustId, ai.UserName
+			INSERT INTO #Affiliate (CustId, AffCode)
+			SELECT mi.CustId, ai.AffCode
 			FROM Affiliate_N8B.dbo.MemberInfo mi WITH (NOLOCK)
 				INNER JOIN Affiliate_N8B.dbo.AffInfo ai WITH (NOLOCK) ON mi.AffId = ai.AffId
 		END
 
-		SELECT RowId, UserName, RegTime, SignupUrl, FirstDepositAmount, NoOfDeposits, DepositAmount
+		SELECT RowId, UserName, Currency, RegTime, SignupUrl, AffCode, FirstDepositAmount, NoOfDeposits, TotalDepositAmount
 		FROM (
-			SELECT UserName, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, FirstDepositAmount, NoOfDeposits, DepositAmount
+			SELECT UserName, Code AS Currency, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, AffCode, FirstDepositAmount, NoOfDeposits, TotalDepositAmount
 				,ROW_NUMBER() OVER(ORDER BY
 							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN Username END ASC
 							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN Username END DESC
-							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN RegTime END ASC
-							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN RegTime END DESC
-							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN SignupUrl END ASC
-							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN SignupUrl END DESC
-							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN FirstDepositAmount END ASC
-							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN FirstDepositAmount END DESC
-							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN NoOfDeposits END ASC
-							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN NoOfDeposits END DESC
-							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN DepositAmount END ASC
-							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN DepositAmount END DESC) AS RowId
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN Code END ASC
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN Code END DESC
+							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN RegTime END ASC
+							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN RegTime END DESC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN SignupUrl END ASC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN SignupUrl END DESC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN AffCode END ASC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN AffCode END DESC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN FirstDepositAmount END ASC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN FirstDepositAmount END DESC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN NoOfDeposits END ASC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN NoOfDeposits END DESC
+							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN TotalDepositAmount END ASC
+							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN TotalDepositAmount END DESC) AS RowId
 			FROM (
-				SELECT c.UserName, c.RegTime
+				SELECT c.UserName, e.Code, c.RegTime
 					,CASE
-						WHEN a.CustId IS NOT NULL THEN a.AffName
+						WHEN a.CustId IS NOT NULL THEN cg.SignupUrl
 						WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+						WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 						WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3 THEN @DefaultSignupUrl
 						WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 						ELSE cg.SignupUrl END AS SignupUrl
+					,a.AffCode
 					,d.NoOfDeposits
 					,d.FirstDepositAmount
-					,d.DepositAmount
+					,d.TotalDepositAmount
 				FROM #DepositInfo d
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 					INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
+					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
 					LEFT JOIN #Affiliate a ON c.CustId = a.CustId
 					LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
 				WHERE c.SiteId = @SiteId
