@@ -196,16 +196,17 @@ BEGIN
 						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN Code END DESC
 						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN RegTime END ASC
 						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN RegTime END DESC
-						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN RegTime END ASC
-						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN RegTime END DESC
-						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN RegTime END ASC
-						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN RegTime END DESC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN SignupUrl END ASC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN SignupUrl END DESC
+						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN AffCode END ASC
+						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN AffCode END DESC
 						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN TotalDepositAmount END ASC
 						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN TotalDepositAmount END DESC
 						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN TotalWithdrawalAmount END ASC
 						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN TotalWithdrawalAmount END DESC
 						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN TotalBonusAmount END ASC
-						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN TotalBonusAmount END DESC) AS RowId
+						,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN TotalBonusAmount END DESC
+						,Username) AS RowId
 			FROM (
 				SELECT b.BonusCode, c.UserName, e.Code, c.RegTime
 					,CASE

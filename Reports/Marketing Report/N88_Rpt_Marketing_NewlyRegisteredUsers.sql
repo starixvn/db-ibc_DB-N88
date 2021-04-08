@@ -104,14 +104,15 @@ BEGIN
 			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY d.CustId
 		
-		SELECT b.BonusCode, COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
+		SELECT b.BonusCode, b.BonusName, COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
 		FROM dbo.Customer c WITH (NOLOCK)
 			LEFT JOIN #BonusInfo b ON c.CustId = b.CustId
 			LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
 		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
-		GROUP BY b.BonusCode
+		GROUP BY b.BonusCode, b.BonusName
+		ORDER BY b.BonusCode
 
 		-- Detail by Signup URL
 		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
@@ -152,48 +153,68 @@ BEGIN
 			FROM Affiliate_N8B.dbo.MemberInfo WITH (NOLOCK)
 		END
 
-		SELECT
-			CASE
-				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
-				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
-				ELSE 'None' END AS SignUpSource
-			,CASE
-				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
-				ELSE cg.SignupUrl END AS SignupUrl
-			,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
-		FROM dbo.Customer c WITH (NOLOCK)
-			INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
-			LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
-			LEFT JOIN #Affiliate a ON c.CustId = a.CustId
-			LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
-			LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
-		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND c.SiteId = @SiteId
-			AND c.IsTest = 0
-		GROUP BY
-			CASE
-				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
-				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
-				ELSE 'None' END
-			,CASE
-				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
-				ELSE cg.SignupUrl END
+		SELECT SignUpSource, SignupUrl, NewlyRegisterUsers, Deposit, FirstDepositAmount, TotalDepositAmount
+		FROM (
+			SELECT
+				CASE
+					WHEN a.CustId IS NOT NULL THEN 'AFF'
+					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
+					ELSE 'None' END AS SignUpSource
+				,CASE
+					WHEN a.CustId IS NOT NULL THEN 'AFF'
+					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					ELSE cg.SignupUrl END AS SignupUrl
+				,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
+				,CASE
+					WHEN a.CustId IS NOT NULL THEN 2
+					WHEN ag.UserName = @CreditAgentName THEN 4
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1 -- main site
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
+					WHEN cg.CustId IS NOT NULL THEN 5
+					ELSE 6 END AS OrderCol
+			FROM dbo.Customer c WITH (NOLOCK)
+				INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
+				LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
+				LEFT JOIN #Affiliate a ON c.CustId = a.CustId
+				LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
+				LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
+			WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND c.SiteId = @SiteId
+				AND c.IsTest = 0
+			GROUP BY
+				CASE
+					WHEN a.CustId IS NOT NULL THEN 'AFF'
+					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
+					ELSE 'None' END
+				,CASE
+					WHEN a.CustId IS NOT NULL THEN 'AFF'
+					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					ELSE cg.SignupUrl END
+				,CASE
+					WHEN a.CustId IS NOT NULL THEN 2
+					WHEN ag.UserName = @CreditAgentName THEN 4
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1 -- main site
+					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
+					WHEN cg.CustId IS NOT NULL THEN 5
+					ELSE 6 END
+		) r
+		ORDER BY OrderCol, SignupUrl
 
 		DROP TABLE #Affiliate
 		DROP TABLE #BonusInfo

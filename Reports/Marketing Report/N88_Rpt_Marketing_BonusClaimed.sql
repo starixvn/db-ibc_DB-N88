@@ -31,7 +31,7 @@ BEGIN
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
-	CREATE TABLE #BonusInfo (BonusCode VARCHAR(50), Currency INT, BonusClaimeds INT, BonusAmount MONEY, IsCompared BIT)
+	CREATE TABLE #BonusInfo (BonusCode VARCHAR(50), Currency INT, BonusClaimeds INT, BonusAmount MONEY, BasedBonusAmount MONEY, IsCompared BIT)
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
 	BEGIN
@@ -54,8 +54,8 @@ BEGIN
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, IsCompared)
-			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount * e.Rate) AS BonusAmount, 0 AS IsCompared
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
 			FROM (
 				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
@@ -69,8 +69,8 @@ BEGIN
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY b.BonusCode, b.CurrencyId
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, IsCompared)
-			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount * e.Rate) AS BonusAmount, 0 AS IsCompared
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
 			FROM (
 				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(r.RedeemAmount) AS BonusAmount
 				FROM dbo.RebateMLog r WITH (NOLOCK)
@@ -93,8 +93,8 @@ BEGIN
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, IsCompared)
-			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount * e.Rate) AS BonusAmount, 1 AS IsCompared
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
 			FROM (
 				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
@@ -108,8 +108,8 @@ BEGIN
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY b.BonusCode, b.CurrencyId
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, IsCompared)
-			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount * e.Rate) AS BonusAmount, 1 AS IsCompared
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
 			FROM (
 				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(r.RedeemAmount) AS BonusAmount
 				FROM dbo.RebateMLog r WITH (NOLOCK)
@@ -125,12 +125,16 @@ BEGIN
 		END
 
 		-- Summary by Currency
-		SELECT Currency, SUM(CASE WHEN IsCompared = 0 THEN BonusAmount ELSE 0 END) AS BonusAmountClaimeds, SUM(CASE WHEN IsCompared = 1 THEN BonusAmount ELSE 0 END) AS CompareBonusAmountClaimeds
+		SELECT Currency
+			,SUM(CASE WHEN IsCompared = 0 THEN BonusAmount ELSE 0 END)		AS BonusAmountClaimeds
+			,SUM(CASE WHEN IsCompared = 0 THEN BasedBonusAmount ELSE 0 END) AS BasedBonusAmountClaimeds
+			,SUM(CASE WHEN IsCompared = 1 THEN BonusAmount ELSE 0 END)		AS CompareBonusAmountClaimeds
+			,SUM(CASE WHEN IsCompared = 1 THEN BasedBonusAmount ELSE 0 END) AS CompareBasedBonusAmountClaimeds
 		FROM #BonusInfo
 		GROUP BY Currency
 
 		-- Detail by Bonus Code, Currency
-		SELECT b.BonusCode, b.Currency, p.Description AS BonusName, b.BonusClaimeds, b.BonusAmount
+		SELECT b.BonusCode, b.Currency, p.Description AS BonusName, b.BonusClaimeds, b.BonusAmount, b.BasedBonusAmount
 		FROM #BonusInfo b
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
 		WHERE b.IsCompared = 0
