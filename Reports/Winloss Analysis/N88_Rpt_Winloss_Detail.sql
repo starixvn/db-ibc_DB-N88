@@ -112,7 +112,7 @@ BEGIN
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND 1 = 
 						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2) THEN 1
+							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
 							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
 							ELSE 0
 						END
@@ -182,7 +182,7 @@ BEGIN
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND 1 = 
 						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2) THEN 1
+							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
 							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
 							ELSE 0
 						END
