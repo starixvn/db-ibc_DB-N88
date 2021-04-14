@@ -122,12 +122,12 @@ BEGIN
 
 		SELECT RowId, UserName, Currency, RegTime, SignupUrl, AffCode, FirstDepositAmount, NoOfDeposits, TotalDepositAmount
 		FROM (
-			SELECT UserName, Code AS Currency, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, AffCode, FirstDepositAmount, NoOfDeposits, TotalDepositAmount
+			SELECT UserName, Currency, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, ISNULL(SignupUrl, 'None') AS SignupUrl, AffCode, FirstDepositAmount, NoOfDeposits, TotalDepositAmount
 				,ROW_NUMBER() OVER(ORDER BY
 							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN Username END ASC
 							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN Username END DESC
-							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN Code END ASC
-							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN Code END DESC
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN Currency END ASC
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN Currency END DESC
 							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN RegTime END ASC
 							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN RegTime END DESC
 							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN SignupUrl END ASC
@@ -141,7 +141,11 @@ BEGIN
 							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN TotalDepositAmount END ASC
 							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN TotalDepositAmount END DESC) AS RowId
 			FROM (
-				SELECT c.UserName, e.Code, c.RegTime
+				SELECT c.UserName, c.RegTime
+					,CASE
+						WHEN e.ExchangeId = 51 THEN 'INH'
+						WHEN e.ExchangeId = 20 THEN 'UUS'
+						ELSE e.Code END AS Currency
 					,CASE
 						WHEN a.CustId IS NOT NULL THEN cg.SignupUrl
 						WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'

@@ -90,23 +90,32 @@ BEGIN
 
 		SELECT RowId, UserName, Currency, RegTime, NoOfWithdrawals, TotalWithdrawalAmount
 		FROM (
-			SELECT c.UserName, e.Code AS Currency, DATEADD(HOUR, @Timezone, c.RegTime) AS RegTime, w.BetCount AS NoOfWithdrawals, w.Amount AS TotalWithdrawalAmount
+			SELECT UserName, Currency, DATEADD(HOUR, @Timezone, RegTime) AS RegTime, BetCount AS NoOfWithdrawals, Amount AS TotalWithdrawalAmount
 				,ROW_NUMBER() OVER(ORDER BY
-						 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN c.Username END ASC
-						,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN c.Username END DESC
-						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN c.RegTime END ASC
-						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN c.RegTime END DESC
-						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN c.RegTime END ASC
-						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN c.RegTime END DESC
-						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN w.BetCount END ASC
-						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN w.BetCount END DESC
-						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN w.Amount END ASC
-						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN w.Amount END DESC) AS RowId
-			FROM dbo.Customer c WITH (NOLOCK)
-				INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
-				INNER JOIN #WithdrawalInfo w ON c.CustId = w.CustId
-			WHERE c.SiteId = @SiteId
-				AND c.IsTest = 0
+						 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN Username END ASC
+						,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN Username END DESC
+						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN Currency END ASC
+						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN Currency END DESC
+						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN RegTime END ASC
+						,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN RegTime END DESC
+						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN BetCount END ASC
+						,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN BetCount END DESC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN Amount END ASC
+						,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN Amount END DESC) AS RowId
+			FROM (
+				SELECT c.UserName, c.RegTime
+					,CASE
+							WHEN e.ExchangeId = 51 THEN 'INH'
+							WHEN e.ExchangeId = 20 THEN 'UUS'
+							ELSE e.Code END AS Currency
+					,w.BetCount
+					,w.Amount
+				FROM dbo.Customer c WITH (NOLOCK)
+					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
+					INNER JOIN #WithdrawalInfo w ON c.CustId = w.CustId
+				WHERE c.SiteId = @SiteId
+					AND c.IsTest = 0
+			) c
 		) r
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 

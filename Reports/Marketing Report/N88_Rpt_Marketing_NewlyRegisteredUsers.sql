@@ -78,6 +78,7 @@ BEGIN
 		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
 			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND b.SiteId = @SiteId
+		GROUP BY b.CustId, b.BonusCode, p.Description
 
 		INSERT INTO #BonusInfo (CustId, BonusCode, BonusName)
 		SELECT b.CustId, b.BonusCode, p.Description AS BonusName
@@ -86,6 +87,7 @@ BEGIN
 		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
 			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND b.SiteId = @SiteId
+		GROUP BY b.CustId, b.BonusCode, p.Description
 
 		CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY)
 		INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount)
@@ -104,7 +106,7 @@ BEGIN
 			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY d.CustId
 		
-		SELECT b.BonusCode, b.BonusName, COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
+		SELECT b.BonusCode, b.BonusName, COUNT(c.CustId) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
 		FROM dbo.Customer c WITH (NOLOCK)
 			LEFT JOIN #BonusInfo b ON c.CustId = b.CustId
 			LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
@@ -112,7 +114,7 @@ BEGIN
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
 		GROUP BY b.BonusCode, b.BonusName
-		ORDER BY b.BonusCode
+		ORDER BY CASE WHEN b.BonusCode IS NULL THEN 1 ELSE 0 END, b.BonusCode
 
 		-- Detail by Signup URL
 		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)

@@ -138,7 +138,7 @@ BEGIN
 		FROM #BonusInfo b
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
 		WHERE b.IsCompared = 0
-		ORDER BY b.BonusCode
+		ORDER BY CASE WHEN b.BonusCode IS NULL THEN 1 ELSE 0 END, b.BonusCode
 
 		DROP TABLE #BonusInfo
 		DROP TABLE #Exchange
