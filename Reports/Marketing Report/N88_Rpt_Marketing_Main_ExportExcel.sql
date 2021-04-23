@@ -21,6 +21,7 @@ AS
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" and sort - [RedmineID: #147542]
 		- 20210113@Percy: Add Rebate & Cashback + 'APP' signup url [RedmineID: #148616]
 		- 20210301@Percy: Change date range on MTD column + translate of Credit [RedmineID: #150398]
+		- 20210401@Percy: Add new group Signup Url [RedmineID: #150876]
 */
 
 BEGIN
@@ -489,6 +490,7 @@ BEGIN
 				CAST((CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END) AS NVARCHAR(200)) AS SignupUrl
@@ -498,7 +500,8 @@ BEGIN
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
 					WHEN ag.UserName = @CreditAgentName THEN 4
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1 -- main site
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
 					WHEN cg.CustId IS NOT NULL THEN 5
 					ELSE 6 END AS OrderCol
@@ -513,13 +516,15 @@ BEGIN
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
 					WHEN ag.UserName = @CreditAgentName THEN 4
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1
+					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1 -- main site
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
 					WHEN cg.CustId IS NOT NULL THEN 5
 					ELSE 6 END

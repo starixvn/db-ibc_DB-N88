@@ -18,6 +18,7 @@ AS
 		- 20201215@Percy: Initialize SP [RedmineID: #146760]
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
 		- 20210113@Percy: Add 'APP' signup url [RedmineID: #148616]
+		- 20210401@Percy: Add Number of Players column [RedmineID: #150876]
 */
 
 BEGIN
@@ -31,6 +32,7 @@ BEGIN
 	DECLARE @DepositAmount MONEY, @CompareDepositAmount MONEY
 
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY, IsCompared BIT)
 
 	BEGIN
 		SELECT @SiteId = SiteId
@@ -44,50 +46,66 @@ BEGIN
 				,@CompareFromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareFromDate))
 				,@CompareToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareToDate))
 
-		-- Get data for compare
-		BEGIN
-			SELECT @tmpFromDate = DATEADD(DAY, -1, @CompareFromDate), @tmpToDate = DATEADD(DAY, 1, @CompareToDate)
-		
-			DELETE #Exchange
-			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
-
-			SELECT @CompareDepositAmount = SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
-			FROM dbo.DepositInfo d WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
-					AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-			WHERE d.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND d.CreateTime >= @CompareFromDateTimeGMT AND d.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-				AND d.SiteId = @SiteId
-				AND d.Status = 3
-				AND c.IsTest = 0
-		END
-		
 		-- Get data
 		BEGIN
 			SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
 		
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
-
-			SELECT @DepositAmount = SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
-			FROM dbo.DepositInfo d WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
-					AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate
-			WHERE d.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND d.CreateTime >= @FromDateTimeGMT AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND d.SiteId = @SiteId
-				AND d.Status = 3
-				AND c.IsTest = 0
+			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+			
+			INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount, IsCompared)
+			SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate), 0 AS IsCompared
+			FROM (
+				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+					,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
+					,SUM(Amount) AS TotalDepositAmount
+				FROM dbo.DepositInfo WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND Status = 3 -- Approved
+				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			) d
+				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY d.CustId
 		END
+		
+		-- Get data for compare
+		BEGIN
+			SELECT @tmpFromDate = DATEADD(DAY, -1, @CompareFromDate), @tmpToDate = DATEADD(DAY, 1, @CompareToDate)
+		
+			DELETE #Exchange
+			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
+			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+			
+			INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount, IsCompared)
+			SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate), 1 AS IsCompared
+			FROM (
+				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+					,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
+					,SUM(Amount) AS TotalDepositAmount
+				FROM dbo.DepositInfo WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND CreateTime >= @CompareFromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND Status = 3 -- Approved
+				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			) d
+				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY d.CustId
+		END
+
+		-- Summary
+		SELECT SUM(CASE WHEN d.IsCompared = 0 THEN d.TotalDepositAmount ELSE 0 END) AS DepositAmount,SUM(CASE WHEN d.IsCompared = 1 THEN d.TotalDepositAmount ELSE 0 END) AS CompareDepositAmount
+		FROM #DepositInfo d
+			INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
+		WHERE c.IsTest = 0
 
 		-- Detail by Signup URL
 		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
 		DECLARE @MainUrls TABLE (Url VARCHAR(200))
-		CREATE TABLE #Affiliate (CustId INT, AffId INT)
+		CREATE TABLE #Affiliate (CustId INT)
 		
 		IF @SiteId = 1
 		BEGIN
@@ -96,8 +114,8 @@ BEGIN
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
 			
-			INSERT INTO #Affiliate (CustId, AffId)
-			SELECT CustId, AffId
+			INSERT INTO #Affiliate (CustId)
+			SELECT CustId
 			FROM Affiliate_N88.dbo.MemberInfo WITH (NOLOCK)
 		END
 		ELSE IF @SiteId = 2
@@ -107,8 +125,8 @@ BEGIN
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.goal123.com'), ('m.goal123.com')
 			
-			INSERT INTO #Affiliate (CustId, AffId)
-			SELECT CustId, AffId
+			INSERT INTO #Affiliate (CustId)
+			SELECT CustId
 			FROM Affiliate_N8G.dbo.MemberInfo WITH (NOLOCK)
 		END
 		ELSE IF @SiteId = 3
@@ -118,37 +136,16 @@ BEGIN
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.bwing.com'), ('m.bwing.com')
 			
-			INSERT INTO #Affiliate (CustId, AffId)
-			SELECT CustId, AffId
+			INSERT INTO #Affiliate (CustId)
+			SELECT CustId
 			FROM Affiliate_N8B.dbo.MemberInfo WITH (NOLOCK)
 		END
-
-		CREATE TABLE #DepositInfo (CustId INT, DepositAmount MONEY, FirstDepositAmount MONEY)
-
-		;WITH CTE_DepositInfo AS (
-			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-				,SUM(Amount) AS DepositAmount
-				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
-			FROM dbo.DepositInfo WITH (NOLOCK)
-			WHERE CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND Status = 3
-			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-		)
-		INSERT INTO #DepositInfo (CustId, DepositAmount, FirstDepositAmount)
-		SELECT CustId
-			,SUM(DepositAmount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
-			,SUM(FirstDepositAmount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
-		FROM CTE_DepositInfo d
-			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY CustId
-
-		SELECT @DepositAmount AS DepositAmount, @CompareDepositAmount AS CompareDepositAmount
 
 		SELECT
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
@@ -156,22 +153,27 @@ BEGIN
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				ELSE cg.SignupUrl END AS SignupUrl
 			,SUM(d.FirstDepositAmount) AS FirstDepositAmount
-			,SUM(d.DepositAmount) AS DepositAmount
+			,SUM(d.TotalDepositAmount) AS TotalDepositAmount
+			,COUNT(DISTINCT d.CustId) AS DepositPlayers
 		FROM #DepositInfo d
 			INNER JOIN dbo.Customer c with (nolock) on d.CustId = c.CustId
 			INNER JOIN dbo.Customer ag with (nolock) on c.AgentId = ag.CustId
 			LEFT JOIN dbo.CustRegInfo cg with (nolock) on c.CustId = cg.CustId
 			LEFT JOIN #Affiliate a ON d.CustId = a.CustId
 			LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
-		WHERE c.SiteId = @SiteId AND c.IsTest = 0
+		WHERE d.IsCompared = 0
+			AND c.SiteId = @SiteId
+			AND c.IsTest = 0
 		GROUP BY
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
@@ -179,6 +181,7 @@ BEGIN
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
 				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
+				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
 				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
 				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 				ELSE cg.SignupUrl END
