@@ -11,6 +11,8 @@ ALTER PROCEDURE [dbo].N88_Rpt_Winloss_BetList
 	@TimeZone SMALLINT = -4,
 	@PageIndex INT = 1,
 	@PageSize INT = 50,
+	@SortbyId TINYINT = 2, --default for trans time
+	@IsSortAsc BIT = 1,
 	@TotalRows INT = 0 OUTPUT
 )
 AS
@@ -22,6 +24,15 @@ AS
 	
 	Revisions:
 		- 20210423@Sol: Initial sp - Detail betlist for non-sport - [Redmine:#139333]
+
+	Param's Explanation:
+		@SortbyId:
+			.  1 = Ref no (Trans ID)
+			.  2 = Trans time
+			.  3 = Stake
+			.  4 = Player winloss
+			.  5 = GGR
+			.  6 = Status
 
 */
 
@@ -50,7 +61,10 @@ BEGIN
 		Stake MONEY,
 		PlayerWinLoss MONEY,
 		GGR MONEY,
-		TicketStatus VARCHAR(100)
+		TicketStatus VARCHAR(100),
+		BasedStake MONEY,
+		BasedPlayerWinLoss MONEY,
+		BasedGGR MONEY
 	)
 
 	CREATE CLUSTERED INDEX CIX_N88_BetList ON #__N88_BetList (RowNumber)
@@ -70,21 +84,25 @@ BEGIN
 
 		INSERT INTO #__N88_BetList
 		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus
+			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus,
+			BasedStake, BasedPlayerWinLoss, BasedGGR
 		)
 		SELECT 
 			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
 			r.TransId AS RefNo,
 			r.rptDate AS TransTime,
-			r.Stake,
-			r.WinlostAmount AS PlayerWinLoss,
-			r.Revenue AS GGR,
+			SUM(r.Stake) AS Stake,
+			SUM(r.WinlostAmount) AS PlayerWinLoss,
+			SUM(r.Revenue) AS GGR,
 			CASE 
 				WHEN r.TicketStatus = 1 THEN 'Won'
 				WHEN r.TicketStatus = 2 THEN 'Loss'
 				WHEN r.TicketStatus = 4 THEN 'Draw'
 				WHEN r.TicketStatus = 6 THEN 'Free Bet Won'
-			END AS TicketStatus
+			END AS TicketStatus,
+			SUM(r.Stake * e.Rate) AS BasedStake,
+			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
+			SUM(r.Revenue * e.Rate) AS BasedGGR
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -108,6 +126,7 @@ BEGIN
 						END
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
+		GROUP BY r.TransId, r.rptDate, r.TicketStatus
 	END
 	---- by transdate
 	ELSE 
@@ -124,21 +143,25 @@ BEGIN
 
 		INSERT INTO #__N88_BetList
 		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus
+			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus,
+			BasedStake, BasedPlayerWinLoss, BasedGGR
 		)
 		SELECT
 			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
 			r.TransId AS RefNo,
 			r.rptDate AS TransTime,
-			r.Stake,
-			r.WinlostAmount AS PlayerWinLoss,
-			r.Revenue AS GGR,
+			SUM(r.Stake) AS Stake,
+			SUM(r.WinlostAmount) AS PlayerWinLoss,
+			SUM(r.Revenue) AS GGR,
 			CASE 
 				WHEN r.TicketStatus = 1 THEN 'Won'
 				WHEN r.TicketStatus = 2 THEN 'Loss'
 				WHEN r.TicketStatus = 4 THEN 'Draw'
 				WHEN r.TicketStatus = 6 THEN 'Free Bet Won'
-			END AS TicketStatus
+			END AS TicketStatus,
+			SUM(r.Stake * e.Rate) AS BasedStake,
+			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
+			SUM(r.Revenue * e.Rate) AS BasedGGR
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -162,6 +185,7 @@ BEGIN
 						END
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
+		GROUP BY r.TransId, r.rptDate, r.TicketStatus
 	END
 
 	DROP TABLE #__Exchange
@@ -172,9 +196,42 @@ BEGIN
 
 	SELECT @TotalRows = MAX(RowNumber) FROM #__N88_BetList
 
-	SELECT t.RowNumber, t.RefNo, t.TransTime, t.Stake, t.PlayerWinLoss, t.GGR, t.TicketStatus
+	--dynamic sort by user
+	;WITH rs AS
+	(
+		SELECT 
+			t.RefNo, 
+			ROW_NUMBER() OVER
+				(
+					ORDER BY 
+						CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN t.RefNo END ASC,
+						CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN t.RefNo END DESC,
+						CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN t.TransTime END ASC,
+						CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN t.TransTime END DESC,
+						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN t.Stake END ASC,
+						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN t.Stake END DESC,
+						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN t.PlayerWinLoss END ASC,
+						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN t.PlayerWinLoss END DESC,
+						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN t.GGR END ASC,
+						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN t.GGR END DESC,
+						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN t.TicketStatus END ASC,
+						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN t.TicketStatus END DESC
+				) AS NewRowNumber
+		FROM #__N88_BetList t
+	)
+	UPDATE t
+		SET t.RowNumber = rs.NewRowNumber
+	FROM #__N88_BetList t
+		INNER JOIN rs 
+			ON t.RefNo = rs.RefNo
+
+	SELECT t.RowNumber, t.RefNo, t.TransTime, t.Stake, t.BasedStake, t.PlayerWinLoss, t.BasedPlayerWinLoss, t.GGR, t.BasedGGR, t.TicketStatus
 	FROM #__N88_BetList t
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
+
+	--data in total
+	SELECT SUM(t.PlayerWinLoss) AS TotalPlayerWinLoss, SUM(t.BasedPlayerWinLoss) AS TotalBasedPlayerWinLoss, SUM(t.GGR) AS TotalGGR, SUM(t.BasedGGR) AS TotalBasedGGR
+	FROM #__N88_BetList t
 
 	DROP TABLE #__N88_BetList
 
