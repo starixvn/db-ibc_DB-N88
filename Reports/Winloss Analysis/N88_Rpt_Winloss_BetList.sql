@@ -109,14 +109,18 @@ BEGIN
 				, DATEADD(HOUR, @TimeZone, r.TransTime ) AS rptDate
 				, r.CurrencyId
 				, r.TransId
-				, r.Stake
-				, r.WinlostAmount
-				, r.Revenue
+				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
+				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
+				, r.Revenue / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
+				, r.TpId
+				, r.GameType
 			FROM dbo.TpBetRecord r WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND r.SiteId = @SiteId
 				AND r.CustId = @CustId
+				AND r.CurrencyId = @CurrencyId
 				AND r.GameType = @ProductId
 				AND 1 = 
 						CASE 
@@ -126,7 +130,7 @@ BEGIN
 						END
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
-		GROUP BY r.TransId, r.rptDate, r.TicketStatus
+		GROUP BY r.TpId, r.TransId, r.GameType, r.rptDate, r.TicketStatus
 	END
 	---- by transdate
 	ELSE 
@@ -168,14 +172,18 @@ BEGIN
 				, DATEADD(HOUR, @TimeZone, r.TransTime ) AS rptDate
 				, r.CurrencyId
 				, r.TransId
-				, r.Stake
-				, r.WinlostAmount
-				, r.Revenue
+				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
+				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
+				, r.Revenue / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
+				, r.TpId
+				, r.GameType
 			FROM dbo.TpBetRecord r WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND r.SiteId = @SiteId
 				AND r.CustId = @CustId
+				AND r.CurrencyId = @CurrencyId
 				AND r.GameType = @ProductId
 				AND 1 = 
 						CASE 
@@ -185,7 +193,7 @@ BEGIN
 						END
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
-		GROUP BY r.TransId, r.rptDate, r.TicketStatus
+		GROUP BY r.TpId, r.TransId, r.GameType, r.rptDate, r.TicketStatus
 	END
 
 	DROP TABLE #__Exchange
