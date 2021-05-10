@@ -111,7 +111,7 @@ BEGIN
 				, r.TransId
 				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, r.Revenue / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
+				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -r.WinlostAmount END)/ (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
 				, r.GameType
@@ -174,7 +174,7 @@ BEGIN
 				, r.TransId
 				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, r.Revenue / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
+				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -r.WinlostAmount END) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
 				, r.GameType
