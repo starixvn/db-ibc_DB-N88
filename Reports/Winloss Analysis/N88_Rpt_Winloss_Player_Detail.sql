@@ -321,7 +321,7 @@ BEGIN
 		,0 BasedWithdrawalAmount
 	FROM #__tmpResult t
 		INNER JOIN dbo.Customer c WITH (NOLOCK) ON t.CustId = c.CustId
-	ORDER BY t.ProductName
+	ORDER BY t.ProductId
 
 	DROP TABLE #__tmpResult
 	DROP TABLE #__N88_SumWinloss
