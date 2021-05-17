@@ -5,7 +5,7 @@ ALTER PROCEDURE [dbo].N88_Rpt_Winloss_BetList
 	@FromDate DATE,
 	@ToDate DATE,
 	@ProductId INT,
-	@CustId INT,
+	@CustId VARCHAR(45),
 	@DisplayCurrency VARCHAR(3),
 	@IsNoDrawTicket BIT,
 	@TimeZone SMALLINT = -4,
@@ -50,7 +50,7 @@ BEGIN
 	DECLARE @SiteId INT, @CurrencyId INT
 	SELECT  @SiteId = c.SiteId, @CurrencyId = c.CurrencyId
 	FROM dbo.Customer c WITH(NOLOCK)
-	WHERE c.CustId = @CustId
+	WHERE c.CustId = CAST(@CustId AS INT)
 	
 	-- 1. Get raw data
 	CREATE TABLE #__N88_BetList
