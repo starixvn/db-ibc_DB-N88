@@ -64,7 +64,9 @@ BEGIN
 		TicketStatus VARCHAR(100),
 		BasedStake MONEY,
 		BasedPlayerWinLoss MONEY,
-		BasedGGR MONEY
+		BasedGGR MONEY,
+		TpId INT,
+		GameType INT
 	)
 
 	CREATE CLUSTERED INDEX CIX_N88_BetList ON #__N88_BetList (RowNumber)
@@ -85,7 +87,7 @@ BEGIN
 		INSERT INTO #__N88_BetList
 		(
 			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus,
-			BasedStake, BasedPlayerWinLoss, BasedGGR
+			BasedStake, BasedPlayerWinLoss, BasedGGR, TpId, GameType
 		)
 		SELECT 
 			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
@@ -102,7 +104,9 @@ BEGIN
 			END AS TicketStatus,
 			SUM(r.Stake * e.Rate) AS BasedStake,
 			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
-			SUM(r.Revenue * e.Rate) AS BasedGGR
+			SUM(r.Revenue * e.Rate) AS BasedGGR,
+			r.TpId,
+			r.GameType
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -116,7 +120,6 @@ BEGIN
 				, r.TpId
 				, r.GameType
 			FROM dbo.TpBetRecord r WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND r.SiteId = @SiteId
 				AND r.CustId = @CustId
@@ -148,7 +151,7 @@ BEGIN
 		INSERT INTO #__N88_BetList
 		(
 			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus,
-			BasedStake, BasedPlayerWinLoss, BasedGGR
+			BasedStake, BasedPlayerWinLoss, BasedGGR, TpId, GameType
 		)
 		SELECT
 			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
@@ -165,7 +168,9 @@ BEGIN
 			END AS TicketStatus,
 			SUM(r.Stake * e.Rate) AS BasedStake,
 			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
-			SUM(r.Revenue * e.Rate) AS BasedGGR
+			SUM(r.Revenue * e.Rate) AS BasedGGR,
+			r.TpId,
+			r.GameType
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -179,7 +184,6 @@ BEGIN
 				, r.TpId
 				, r.GameType
 			FROM dbo.TpBetRecord r WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND r.SiteId = @SiteId
 				AND r.CustId = @CustId
@@ -209,9 +213,13 @@ BEGIN
 	(
 		SELECT 
 			t.RefNo, 
+			t.TpId,
+			t.GameType,
 			ROW_NUMBER() OVER
 				(
-					ORDER BY 
+					ORDER BY
+						CASE WHEN @SortbyId = 0 AND @IsSortAsc = 1 THEN t.TransTime END ASC,
+						CASE WHEN @SortbyId = 0 AND @IsSortAsc = 0 THEN t.TransTime END DESC,
 						CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN t.RefNo END ASC,
 						CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN t.RefNo END DESC,
 						CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN t.TransTime END ASC,
@@ -231,11 +239,12 @@ BEGIN
 		SET t.RowNumber = rs.NewRowNumber
 	FROM #__N88_BetList t
 		INNER JOIN rs 
-			ON t.RefNo = rs.RefNo
+			ON t.RefNo = rs.RefNo AND t.TpId = rs.TpId AND t.GameType = rs.GameType
 
 	SELECT t.RowNumber, t.RefNo, t.TransTime, t.Stake, t.BasedStake, t.PlayerWinLoss, t.BasedPlayerWinLoss, t.GGR, t.BasedGGR, t.TicketStatus
 	FROM #__N88_BetList t
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
+	ORDER BY t.RowNumber
 
 	--data in total
 	SELECT SUM(t.PlayerWinLoss) AS TotalPlayerWinLoss, SUM(t.BasedPlayerWinLoss) AS TotalBasedPlayerWinLoss, SUM(t.GGR) AS TotalGGR, SUM(t.BasedGGR) AS TotalBasedGGR
