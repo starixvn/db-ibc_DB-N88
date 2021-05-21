@@ -8,6 +8,7 @@ AS
 	
 	Revisions:
 		- 20200511@Sol: Get list gametype [Redmine:#133254]
+		- 20210423@Sol: Order by type - [Redmine:#139333]
 	
 */
 BEGIN
@@ -15,7 +16,8 @@ BEGIN
 	SET NOCOUNT ON;
 
 	SELECT [Type], TypeName 
-	FROM dbo.TpGameType WITH(NOLOCK)
+	FROM dbo.TpGameType t WITH(NOLOCK)
+	ORDER BY t.[Type]
 
 END
 
