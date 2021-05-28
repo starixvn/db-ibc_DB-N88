@@ -5,6 +5,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_NewlyRegisteredUsers]
 	,@ToDate			DATE
 	,@CompareFromDate	DATE = NULL
 	,@CompareToDate		DATE = NULL
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 AS
@@ -22,6 +23,7 @@ AS
 		- 20210401@Percy: [RedmineID: #150876]
 			1. Add Total Total Deposit Amount, Bonus Name columns
 			2. Add new group Nova88.com for SigupUrl
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 */
 
 BEGIN
@@ -48,16 +50,18 @@ BEGIN
 
 		-- Total
 		SELECT @NewlyRegisterUsers = COUNT(1)
-		FROM dbo.Customer WITH (NOLOCK)
+		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND SiteId = @SiteId
 			AND IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @CompareNewlyRegisterUsers = COUNT(1)
-		FROM dbo.Customer WITH (NOLOCK)
+		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE RegTime >= @CompareFromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 			AND SiteId = @SiteId
 			AND IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Summary
 		SELECT @NewlyRegisterUsers AS NewlyRegisterUsers, @CompareNewlyRegisterUsers AS CompareNewlyRegisterUsers
@@ -68,7 +72,9 @@ BEGIN
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 		
 		CREATE TABLE #BonusInfo (CustId INT, BonusCode VARCHAR(50), BonusName VARCHAR(300))
 		INSERT INTO #BonusInfo (CustId, BonusCode, BonusName)
@@ -78,6 +84,7 @@ BEGIN
 		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
 			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND b.SiteId = @SiteId
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 		GROUP BY b.CustId, b.BonusCode, p.Description
 
 		INSERT INTO #BonusInfo (CustId, BonusCode, BonusName)
@@ -87,6 +94,7 @@ BEGIN
 		WHERE b.WinlostDate BETWEEN @FDate AND @TDate
 			AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND b.SiteId = @SiteId
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 		GROUP BY b.CustId, b.BonusCode, p.Description
 
 		CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY)
@@ -96,11 +104,12 @@ BEGIN
 			SELECT CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, CustId, CurrencyId
 				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
 				,SUM(Amount) AS TotalDepositAmount
-			FROM dbo.DepositInfo WITH (NOLOCK)
+			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND Status = 3 -- Approved
 				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), CustId, CurrencyId
 		) d
 			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -113,6 +122,7 @@ BEGIN
 		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		GROUP BY b.BonusCode, b.BonusName
 		ORDER BY CASE WHEN b.BonusCode IS NULL THEN 1 ELSE 0 END, b.BonusCode
 
@@ -191,6 +201,7 @@ BEGIN
 			WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND c.SiteId = @SiteId
 				AND c.IsTest = 0
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			GROUP BY
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'

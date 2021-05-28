@@ -3,6 +3,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Deposit_Detail]
 	@LicenseeId			INT
 	,@FromDate			DATE
 	,@ToDate			DATE
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 	,@SortbyId			TINYINT = 1
@@ -23,6 +24,7 @@ AS
 		- 20201229@Sol: change text from "Credit Site" to "Bong88/Viva88" - [RedmineID: #147542]
 		- 20210113@Percy: Add 'APP' signup url [RedmineID: #148616]
 		- 20210401@Percy: Add Currency, Aff Code columns [RedmineID: #150876]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 
 	Param's Explanation:
 		@SortbyId:
@@ -58,7 +60,9 @@ BEGIN
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 		
 		CREATE TABLE #DepositInfo (CustId INT, NoOfDeposits INT, TotalDepositAmount MONEY, FirstDepositAmount MONEY)
 		
@@ -67,10 +71,11 @@ BEGIN
 				,COUNT(1) AS NoOfDeposits
 				,SUM(Amount) AS TotalDepositAmount
 				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
-			FROM dbo.DepositInfo WITH (NOLOCK)
+			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
 				AND Status = 3
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		)
 		INSERT INTO #DepositInfo (CustId, NoOfDeposits, TotalDepositAmount, FirstDepositAmount)
@@ -165,6 +170,7 @@ BEGIN
 					LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) r
 		) t
 		WHERE RowId BETWEEN @RowStart AND @RowEnd

@@ -10,6 +10,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Winloss]
 	,@UserName					VARCHAR(30) = ''
 	,@CurrencyIds				VARCHAR(MAX)
 	,@DisplayCurrency			VARCHAR(3)
+	,@IsIncludedFreeSpin		BIT = 1
 	,@IsNoDrawTicket			BIT
 	,@IsIncludedTestData		BIT
 	,@IsDetailInOriginalCurr	BIT = 0
@@ -37,6 +38,9 @@ AS
 		- 20210113@Sol: group by player - group wl and dep/wit into one row - [RedmineID: #147542]
 		- 20210223@Percy: Change data source from N88_RptWinloss to N88_SumWinloss to support all time zones [RedmineID: #150398]
 		- 20210316@Percy: Include free bet tickets into No draw option [RedmineID: #146210]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - [RedmineID: #155334]
+			+ include free spin filter
+			+ add closing balance to the report
 
 	Param's Explanation:
 		@SortbyId:
@@ -106,8 +110,14 @@ BEGIN
 
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
+
+	--closing balance temp table
+	CREATE TABLE #__ClosingBalance (CustId INT, ClosingBalance MONEY, BasedClosingBalance MONEY)
 	
-	DECLARE @MinDate DATE, @MaxDate DATE
+	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
+
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
 	
 	---- by winlostdate
 	IF (@FilterBy = 1)
@@ -160,12 +170,7 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
 					ISNULL(@UserName,'') = ''
@@ -240,12 +245,7 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
 					ISNULL(@UserName,'') = ''
@@ -381,6 +381,40 @@ BEGIN
 	END
 	----end
 
+	----cal closing balance
+	BEGIN
+		;WITH rs AS
+		(
+			SELECT 
+				MAX(cb.TIME) mTime, 
+				MAX(CONVERT(DATE, DATEADD(HOUR,-4, cb.TIME))) AS exTime,
+				cb.CustId, cb.SiteId, c.CurrencyId
+			FROM dbo.CustClosingBalance cb
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON cb.CustId = c.CustId
+			WHERE 
+				cb.Time >= @FromDateTimeGMT0 AND cb.Time < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), cb.SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+				AND (
+						ISNULL(@UserName,'') = ''
+						OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
+											WHEN @UserNameFilterId = 2 THEN c.TpUserName
+											WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
+										END
+					)
+			GROUP BY cb.CustId, cb.SiteId, c.CurrencyId
+		)
+		INSERT INTO #__ClosingBalance(CustId, ClosingBalance, BasedClosingBalance)
+		SELECT cb.CustId, SUM(cb.Balance) AS ClosingBalance, SUM(cb.Balance * e.Rate) AS BasedClosingBalance
+		FROM dbo.CustClosingBalance cb
+			INNER JOIN rs
+				ON cb.Time = rs.mTime AND cb.CustId = rs.CustId AND cb.SiteId = rs.SiteId
+			INNER JOIN #__Exchange e
+				ON rs.CurrencyId = e.ExchangeId AND rs.exTime BETWEEN e.FromDate AND e.ToDate
+		GROUP BY cb.CustId
+	END
+
 	DROP TABLE #__Exchange
 
 	-- 2. Calc temp result
@@ -415,6 +449,8 @@ BEGIN
 		,NumberOfWithdrawal			INT
 		,WithdrawalAmount			MONEY
 		,BasedWithdrawalAmount		MONEY
+		,ClosingBalance				MONEY 
+		,BasedClosingBalance		MONEY
 	)
 	
 	-- by date/month
@@ -607,7 +643,7 @@ BEGIN
 	ELSE IF (@GroupBy = 5)
 	BEGIN
 		;WITH CTE_Result AS (
-			SELECT CustId
+			SELECT s.CustId
 				,TurnOver = SUM(TurnOver)
 				,NetTurnOver = SUM(NetTurnOver)
 				,NetTurnOverForMargin = SUM(NetTurnOverForMargin)
@@ -629,8 +665,8 @@ BEGIN
 				,NumberOfWithdrawal = SUM(NumberOfWithdrawal)	
 				,WithdrawalAmount = SUM(WithdrawalAmount)
 				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
-			FROM #__N88_SumWinloss
-			GROUP BY CustId
+			FROM #__N88_SumWinloss s
+			GROUP BY s.CustId
 		)
 		INSERT INTO #__tmpResult
 		(
@@ -663,6 +699,8 @@ BEGIN
 			,NumberOfWithdrawal		
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
+			,ClosingBalance
+			,BasedClosingBalance
 		)
 		SELECT 
 			c.UserName
@@ -694,8 +732,12 @@ BEGIN
 			,NumberOfWithdrawal		
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
+			,CASE WHEN @TimeZone IN (7, 8) THEN ISNULL(cb.ClosingBalance, 0) ELSE 0 END
+			,CASE WHEN @TimeZone IN (7, 8) THEN ISNULL(cb.BasedClosingBalance, 0) ELSE 0 END
 		FROM CTE_Result r
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+			LEFT JOIN #__ClosingBalance cb 
+				ON r.CustId = cb.CustId
 	END
 
 	-- 3. Final result
@@ -732,6 +774,8 @@ BEGIN
 		,NumberOfWithdrawal			INT
 		,WithdrawalAmount			MONEY
 		,BasedWithdrawalAmount		MONEY
+		,ClosingBalance				MONEY 
+		,BasedClosingBalance		MONEY
 	)
 
 	DECLARE @RowStart INT , @RowEnd INT
@@ -769,6 +813,8 @@ BEGIN
 		,NumberOfWithdrawal
 		,WithdrawalAmount
 		,BasedWithdrawalAmount
+		,ClosingBalance
+		,BasedClosingBalance
 	)
 	SELECT
 		DENSE_RANK() OVER(ORDER BY [Group] + CASE WHEN @GroupBy = 5 THEN CONVERT(VARCHAR(20), CustId) ELSE '' END) RowNumber,
@@ -801,6 +847,8 @@ BEGIN
 		,ISNULL(NumberOfWithdrawal, 0)		
 		,ISNULL(WithdrawalAmount, 0)	
 		,ISNULL(BasedWithdrawalAmount, 0)
+		,ISNULL(ClosingBalance, 0)
+		,ISNULL(BasedClosingBalance, 0)
 	FROM #__tmpResult
 
 	DROP TABLE #__tmpResult
@@ -828,14 +876,16 @@ BEGIN
 					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN UniquePlayers END DESC
 					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 1 THEN Margin END ASC
 					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 0 THEN Margin END DESC
-					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN NumberOfDeposit END ASC
-					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN NumberOfDeposit END DESC
-					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN BasedDepositAmount END ASC
-					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN BasedDepositAmount END DESC
-					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
-					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
-					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
-					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC) AS RowNumber
+					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN BasedClosingBalance END ASC
+					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN BasedClosingBalance END DESC
+					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN NumberOfDeposit END ASC
+					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN NumberOfDeposit END DESC
+					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN BasedDepositAmount END ASC
+					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN BasedDepositAmount END DESC
+					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
+					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
+					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
+					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC) AS RowNumber
 			FROM (
 				SELECT GroupId
 					,SUM(BasedTurnover) AS BasedTurnover
@@ -850,6 +900,7 @@ BEGIN
 					,SUM(BasedDepositAmount) AS BasedDepositAmount
 					,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
 					,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
+					,SUM(BasedClosingBalance) AS BasedClosingBalance
 				FROM #__FinalResult
 				GROUP BY GroupId
 			) t
@@ -890,6 +941,8 @@ BEGIN
 		,NumberOfWithdrawal		
 		,WithdrawalAmount	
 		,BasedWithdrawalAmount
+		,ClosingBalance
+		,BasedClosingBalance
 	FROM #__FinalResult
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY RowNumber, CurrencyId
@@ -905,14 +958,18 @@ BEGIN
 		,CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedPlayerWinloss
 		,SUM(BetCount) AS TotalBetCount
 		,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
-		,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN CustId ELSE NULL END)) AS TotalUniquePlayers
+		,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN s.CustId ELSE NULL END)) AS TotalUniquePlayers
 		,ISNULL(SUM(NumberOfDeposit), 0) AS TotalNumberOfDeposit
 		,ISNULL(CAST(SUM(BasedDepositAmount) AS MONEY), 0) AS TotalBasedDepositAmount
 		,ISNULL(SUM(NumberOfWithdrawal), 0) AS TotalNumberOfWithdrawal
 		,ISNULL(CAST(SUM(BasedWithdrawalAmount) AS MONEY), 0) AS TotalBasedWithdrawalAmount
-	FROM #__N88_SumWinloss
+		,ISNULL(MAX(cb.BasedClosingBalance), 0) AS TotalBasedClosingBalance
+	FROM #__N88_SumWinloss s
+		LEFT JOIN #__ClosingBalance cb
+			ON s.CustId = cb.CustId
 
 	DROP TABLE #__FinalResult
 	DROP TABLE #__N88_SumWinloss
+	DROP TABLE #__ClosingBalance
 END
 GO

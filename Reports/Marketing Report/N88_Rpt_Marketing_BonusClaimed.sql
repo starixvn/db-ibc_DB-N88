@@ -5,6 +5,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_BonusClaimed]
 	,@ToDate			DATE
 	,@CompareFromDate	DATE = NULL
 	,@CompareToDate		DATE = NULL
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 AS
@@ -21,6 +22,7 @@ AS
 		- 20210401@Percy: [RedmineID: #150876]
 			1. Add Bonus Name column
 			2. Breakdown by original currency
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 */
 
 BEGIN
@@ -52,7 +54,9 @@ BEGIN
 			
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
 			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
@@ -64,6 +68,7 @@ BEGIN
 					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND b.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				GROUP BY b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) b
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -79,6 +84,7 @@ BEGIN
 					AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND r.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				GROUP BY r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
 			) r
 				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -91,7 +97,9 @@ BEGIN
 			
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
 			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
@@ -103,6 +111,7 @@ BEGIN
 					AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 					AND b.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				GROUP BY b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) b
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -118,6 +127,7 @@ BEGIN
 					AND r.CreateTime >= @CompareFromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 					AND r.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				GROUP BY r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
 			) r
 				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
