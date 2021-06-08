@@ -388,6 +388,7 @@ BEGIN
 			) w
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
 		VALUES
