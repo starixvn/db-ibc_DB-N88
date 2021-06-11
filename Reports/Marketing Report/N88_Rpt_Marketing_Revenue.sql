@@ -69,6 +69,16 @@ BEGIN
 		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
+		;WITH rs AS
+		(
+			SELECT r.CustId, r.GameType AS ProductId, Turnover , r.Currency,
+				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
+			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+			WHERE 
+				r.SettledTime >= @FromDateTimeGMT AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND EXISTS (SELECT 1 FROM #Products p WHERE r.GameType = p.ProductId)
+		)
 		SELECT
 			p.ProductId
 			,CASE WHEN @TotalUsers = 0 THEN 0 ELSE ISNULL(1.0 * Turnover / @TotalUsers, 0) END AS Turnover
@@ -77,14 +87,10 @@ BEGIN
 			LEFT JOIN (
 				SELECT ProductId, SUM(Turnover) AS Turnover
 				FROM (
-					SELECT r.CustId, r.GameType AS ProductId, SUM(Turnover * e.Rate) AS Turnover
-					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-						INNER JOIN #Exchange e ON r.SettledTime BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
-					WHERE 
-						r.SettledTime >= DATEADD(DAY, -1, @FromDateTimeGMT) AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-						AND r.SiteId = @SiteId
-						AND EXISTS (SELECT 1 FROM #Products p WHERE r.GameType = p.ProductId)
-					GROUP BY r.CustId, r.GameType
+					SELECT r.CustId, r.ProductId, SUM(Turnover * e.Rate) AS Turnover
+					FROM rs AS r
+						INNER JOIN #Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
+					GROUP BY r.CustId, r.ProductId
 				) t
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON t.CustId = c.CustId
 				WHERE c.IsTest = 0
