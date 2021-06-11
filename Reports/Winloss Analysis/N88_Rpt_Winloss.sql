@@ -963,7 +963,7 @@ BEGIN
 		,ISNULL(CAST(SUM(BasedDepositAmount) AS MONEY), 0) AS TotalBasedDepositAmount
 		,ISNULL(SUM(NumberOfWithdrawal), 0) AS TotalNumberOfWithdrawal
 		,ISNULL(CAST(SUM(BasedWithdrawalAmount) AS MONEY), 0) AS TotalBasedWithdrawalAmount
-		,ISNULL(MAX(cb.BasedClosingBalance), 0) AS TotalBasedClosingBalance
+		,ISNULL(MAX(CASE WHEN @TimeZone IN (7, 8) THEN cb.BasedClosingBalance ELSE 0 END), 0) AS TotalBasedClosingBalance
 	FROM #__N88_SumWinloss s
 		LEFT JOIN #__ClosingBalance cb
 			ON s.CustId = cb.CustId
