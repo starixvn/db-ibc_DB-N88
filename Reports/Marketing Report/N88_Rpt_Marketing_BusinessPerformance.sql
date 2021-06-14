@@ -124,7 +124,7 @@ BEGIN
 				FROM (
 					SELECT CustId
 					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE TransTime BETWEEN @FromDateTimeGMT AND @ToDateTimeGMT
+					WHERE TransTime >= @FromDateTimeGMT AND TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 						AND SiteId = @SiteId
 						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 					GROUP BY CustId
@@ -194,7 +194,7 @@ BEGIN
 				FROM (
 					SELECT CustId
 					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE r.TransTime BETWEEN @FromDateTimeGMT AND @ToDateTimeGMT
+					WHERE TransTime >= @FromDateTimeGMT AND TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 						AND SiteId = @SiteId
 						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 					GROUP BY CustId
@@ -247,7 +247,7 @@ BEGIN
 				FROM (
 					SELECT CustId
 					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE TransTime BETWEEN @CompareFromDateTimeGMT AND @CompareToDateTimeGMT
+					WHERE TransTime >= @CompareFromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 						AND SiteId = @SiteId
 						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 					GROUP BY CustId
@@ -317,7 +317,7 @@ BEGIN
 				FROM (
 					SELECT CustId
 					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE TransTime BETWEEN @CompareFromDateTimeGMT AND @CompareToDateTimeGMT
+					WHERE TransTime >= @CompareFromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 						AND SiteId = @SiteId
 						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 					GROUP BY CustId
