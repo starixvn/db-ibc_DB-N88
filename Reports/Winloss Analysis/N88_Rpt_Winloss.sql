@@ -406,13 +406,15 @@ BEGIN
 			GROUP BY cb.CustId, cb.SiteId, c.CurrencyId
 		)
 		INSERT INTO #__ClosingBalance(CustId, ClosingBalance, BasedClosingBalance)
-		SELECT cb.CustId, SUM(cb.Balance) AS ClosingBalance, SUM(cb.Balance * e.Rate) AS BasedClosingBalance
+		SELECT cb.CustId, 
+			SUM(cb.Balance / CASE WHEN rs.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ClosingBalance, 
+			SUM((cb.Balance / CASE WHEN rs.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) * e.Rate) AS BasedClosingBalance
 		FROM dbo.CustClosingBalance cb
 			INNER JOIN rs
 				ON cb.Time = rs.mTime AND cb.CustId = rs.CustId AND cb.SiteId = rs.SiteId
 			INNER JOIN #__Exchange e
 				ON rs.CurrencyId = e.ExchangeId AND rs.exTime BETWEEN e.FromDate AND e.ToDate
-		GROUP BY cb.CustId
+		GROUP BY cb.CustId, rs.CurrencyId
 	END
 
 	DROP TABLE #__Exchange
