@@ -4,6 +4,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Revenue]
 	,@FromDate			DATE
 	,@ToDate			DATE
 	,@ProductIds		VARCHAR(MAX)
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 AS
@@ -16,6 +17,7 @@ AS
 	Revisions:
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
 		- 20200818@Percy: Support special date range [RedmineID: #137395]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 */
 
 BEGIN
@@ -25,14 +27,14 @@ BEGIN
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 	DECLARE @TotalUsers INT, @TotalPaidUsers INT
+	DECLARE @FDate DATE, @TDate DATE
+	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
 	BEGIN
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
 		WHERE l.LicenseeId = @LicenseeId
-
-		SELECT @FromDate = CONVERT(DATE, @FromDate), @ToDate = CONVERT(DATE, @ToDate)
 
 		-- Data on GMT+0 --> convert timezone
 		SELECT @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
@@ -43,6 +45,7 @@ BEGIN
 		WHERE c.IsTest = 0
 			AND c.SiteId = @SiteId
 			AND c.RegTime <= DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @TotalPaidUsers = COUNT(d.CustId)
 		FROM dbo.Customer c WITH (NOLOCK)
@@ -55,6 +58,7 @@ BEGIN
 			AND c.SiteId = @SiteId
 			AND d.WinlostDate <= DATEADD(DAY, 1, @ToDate)
 			AND d.CreateTime <= DATEADD(DAY, 1, @ToDateTimeGMT)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		CREATE TABLE #Products (ProductId INT)
 		INSERT INTO #Products (ProductId)
@@ -62,8 +66,19 @@ BEGIN
 
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FromDate, @ToDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
+		;WITH rs AS
+		(
+			SELECT r.CustId, r.GameType AS ProductId, Turnover , r.Currency,
+				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
+			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+			WHERE 
+				r.SettledTime >= @FromDateTimeGMT AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND EXISTS (SELECT 1 FROM #Products p WHERE r.GameType = p.ProductId)
+		)
 		SELECT
 			p.ProductId
 			,CASE WHEN @TotalUsers = 0 THEN 0 ELSE ISNULL(1.0 * Turnover / @TotalUsers, 0) END AS Turnover
@@ -72,15 +87,10 @@ BEGIN
 			LEFT JOIN (
 				SELECT ProductId, SUM(Turnover) AS Turnover
 				FROM (
-					SELECT r.CustId, r.GameType AS ProductId, SUM(Turnover * e.Rate) AS Turnover
-					FROM dbo.N88_RptWinloss r WITH (NOLOCK)
-						INNER JOIN #Exchange e ON r.WinlostDateGMT BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
-					WHERE r.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-						AND r.WinlostDateGMT BETWEEN @FromDate AND @ToDate
-						AND r.TimeZone = @TimeZone
-						AND r.LicenseeId = @LicenseeId
-						AND EXISTS (SELECT 1 FROM #Products p WHERE r.GameType = p.ProductId)
-					GROUP BY r.CustId, r.GameType
+					SELECT r.CustId, r.ProductId, SUM(Turnover * e.Rate) AS Turnover
+					FROM rs AS r
+						INNER JOIN #Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
+					GROUP BY r.CustId, r.ProductId
 				) t
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON t.CustId = c.CustId
 				WHERE c.IsTest = 0

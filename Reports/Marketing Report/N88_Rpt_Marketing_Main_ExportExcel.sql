@@ -5,6 +5,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Main_ExportExcel]
 	,@ToDate			DATE
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
+	,@CurrencyIds VARCHAR(MAX)
 AS
 
 /*
@@ -22,6 +23,7 @@ AS
 		- 20210113@Percy: Add Rebate & Cashback + 'APP' signup url [RedmineID: #148616]
 		- 20210301@Percy: Change date range on MTD column + translate of Credit [RedmineID: #150398]
 		- 20210401@Percy: Add new group Signup Url [RedmineID: #150876]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 */
 
 BEGIN
@@ -102,7 +104,8 @@ BEGIN
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId TINYINT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		-- Active Users
 		SELECT @ActiveUsers = COUNT(1)
@@ -111,21 +114,22 @@ BEGIN
 			AND c.IsTest = 0
 			AND (
 				EXISTS (
-					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
-						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-						AND r.TransDateGMT BETWEEN @FromDate AND @ToDate
-						AND r.TimeZone = @TimeZone
-						AND r.LicenseeId = @LicenseeId
+						AND r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND r.SiteId = @SiteId
+						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				)
 				OR EXISTS (
-					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
+					SELECT 1 
+					FROM dbo.TpTransferInfo t WITH (NOLOCK)
 					WHERE c.CustId = t.CustId
 						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
 						AND t.CreateTime >= @FromDateTimeGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 						AND t.SiteId = @SiteId
 				)
 			)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @MTD_ActiveUsers = COUNT(1)
 		FROM dbo.Customer c WITH (NOLOCK)
@@ -133,12 +137,11 @@ BEGIN
 			AND c.IsTest = 0
 			AND (
 				EXISTS (
-					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
-						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
-						AND r.TransDateGMT BETWEEN @FromDateMTD AND @ToDateMTD
-						AND r.TimeZone = @TimeZone
-						AND r.LicenseeId = @LicenseeId
+						AND r.TransTime >= @FromDateMTDGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateMTDGMT)
+						AND r.SiteId = @SiteId
+						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				)
 				OR EXISTS (
 					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
@@ -148,6 +151,7 @@ BEGIN
 						AND t.SiteId = @SiteId
 				)
 			)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Newly Active Registered Users
 		SELECT @NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
@@ -156,12 +160,11 @@ BEGIN
 			AND c.IsTest = 0
 			AND (
 				EXISTS (
-					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
-						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-						AND r.TransDateGMT BETWEEN @FromDate AND @ToDate
-						AND r.TimeZone = @TimeZone
-						AND r.LicenseeId = @LicenseeId
+						AND r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND r.SiteId = @SiteId
+						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				)
 				OR EXISTS (
 					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
@@ -171,6 +174,7 @@ BEGIN
 						AND t.SiteId = @SiteId
 				)
 			)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @MTD_NewlyActiveRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateMTDGMT AND RegTime < DATEADD(DAY, 1, @ToDateMTDGMT) THEN 1 ELSE NULL END)
 		FROM dbo.Customer c WITH (NOLOCK)
@@ -178,12 +182,11 @@ BEGIN
 			AND c.IsTest = 0
 			AND (
 				EXISTS (
-					SELECT 1 FROM dbo.N88_RptWinloss r WITH (NOLOCK)
+					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 					WHERE c.CustId = r.CustId
-						AND r.TransDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
-						AND r.TransDateGMT BETWEEN @FromDateMTD AND @ToDateMTD
-						AND r.TimeZone = @TimeZone
-						AND r.LicenseeId = @LicenseeId
+						AND r.TransTime >= @FromDateMTDGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateMTDGMT)
+						AND r.SiteId = @SiteId
+						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				)
 				OR EXISTS (
 					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
@@ -193,6 +196,7 @@ BEGIN
 						AND t.SiteId = @SiteId
 				)
 			)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Deposit
 		CREATE TABLE #DepositUsers (CustId INT, Deposit MONEY, FirstDeposit MONEY, IsDateRange TINYINT, IsMTD TINYINT, IsAll TINYINT)
@@ -215,6 +219,7 @@ BEGIN
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE d.SiteId = @SiteId
 				AND d.Status = 3 -- Approved
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 			GROUP BY
 				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime))
@@ -247,6 +252,7 @@ BEGIN
 			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
 			WHERE w.SiteId = @SiteId
 				AND w.Status = 6 -- Approved
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			GROUP BY
 				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime))
@@ -382,6 +388,7 @@ BEGIN
 			) w
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
 		VALUES
@@ -404,6 +411,7 @@ BEGIN
 			) b
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		GROUP BY b.BonusCode
 
 		DROP TABLE #BonusUsers
@@ -512,6 +520,7 @@ BEGIN
 				LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			GROUP BY
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'

@@ -5,6 +5,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_UserActivities]
 	,@ToDate	DATE
 	,@TimeZone	SMALLINT = 8
 	,@ViewBy	TINYINT = 1
+	,@CurrencyIds VARCHAR(MAX)
 AS
 
 /*
@@ -15,6 +16,7 @@ AS
 	Revisions:
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
 		- 20200818@Percy: Change output format of daily mode [RedmineID: #137395]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - change from N88_RptWinloss to N88_SumWinloss - [RedmineID: #155334]
 
 	Param's Explanation:
 		. ViewBy:
@@ -47,21 +49,23 @@ BEGIN
 		FROM (
 			SELECT WinlostDate, CustId
 			FROM (
-				SELECT TransDateGMT AS WinlostDate, CustId
-				FROM dbo.N88_RptWinloss WITH (NOLOCK)
-				WHERE TransDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-					AND TransDateGMT BETWEEN @FromDate AND @ToDate
-					AND TimeZone = @TimeZone
-					AND LicenseeId = @LicenseeId
-				GROUP BY TransDateGMT, CustId
+				SELECT CONVERT(DATE,DATEADD(HOUR, @TimeZone, TransTime)) AS WinlostDate, CustId
+				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND r.SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+				GROUP BY DATEADD(HOUR, @TimeZone, TransTime), CustId
 
 				UNION ALL
-				SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId
-				FROM dbo.TpTransferInfo WITH (NOLOCK)
+				SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), t.CustId
+				FROM dbo.TpTransferInfo t WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH(NOLOCK)
+						ON t.CustId = c.CustId
 				WHERE WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-				GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId
+					AND t.SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+				GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), t.CustId
 			) AS t
 			GROUP BY WinlostDate, CustId
 		) AS a
@@ -75,6 +79,7 @@ BEGIN
 			AND c.IsTest = 0
 			AND c.SiteId = @SiteId
 			AND NOT EXISTS (SELECT 1 FROM #UserActivities u WHERE c.CustId = u.CustId)
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 	END
 
 	-- Return data

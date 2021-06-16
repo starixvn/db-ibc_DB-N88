@@ -3,6 +3,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_BonusClaimed_Detail]
 	@LicenseeId			INT
 	,@FromDate			DATE
 	,@ToDate			DATE
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 	,@SortbyId			TINYINT = 1
@@ -24,6 +25,7 @@ AS
 		- 20210401@Percy: [RedmineID: #150876]
 			1. Add Currency, Signup Url, Bonus Name columns
 			2. Breakdown by original currency
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 
 	Param's Explanation:
 		@SortbyId:
@@ -65,28 +67,33 @@ BEGIN
 				SELECT CustId, BonusCode
 				FROM (
 					SELECT CustId, BonusCode
-					FROM dbo.BonusInfo WITH (NOLOCK)
+					FROM dbo.BonusInfo b WITH (NOLOCK)
 					WHERE WinlostDate BETWEEN @FDate AND @TDate
 						AND SiteId = @SiteId
 						AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 					GROUP BY CustId, BonusCode
 
 					UNION ALL
 					SELECT CustId, BonusCode
-					FROM dbo.RebateMLog WITH (NOLOCK)
+					FROM dbo.RebateMLog r WITH (NOLOCK)
 					WHERE WinlostDate BETWEEN @FDate AND @TDate
 						AND SiteId = @SiteId
 						AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
 					GROUP BY CustId, BonusCode
 				) b
 				GROUP BY CustId, BonusCode
 			) b ON b.CustId = c.CustId
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		DECLARE @RowStart INT, @RowEnd INT
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
@@ -132,10 +139,11 @@ BEGIN
 		SELECT b.CustId, b.BonusCode, SUM(b.Amount * e.Rate)
 		FROM (
 			SELECT CustId, CurrencyId, BonusCode, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(BonusAmount) AS Amount
-			FROM dbo.BonusInfo WITH (NOLOCK)
+			FROM dbo.BonusInfo b WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, BonusCode, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) b
 			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -145,10 +153,11 @@ BEGIN
 		SELECT b.CustId, b.BonusCode, SUM(b.Amount * e.Rate)
 		FROM (
 			SELECT CustId, CurrencyId, BonusCode, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(RedeemAmount) AS Amount
-			FROM dbo.RebateMLog WITH (NOLOCK)
+			FROM dbo.RebateMLog r WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, BonusCode, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) b
 			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -159,11 +168,12 @@ BEGIN
 		SELECT d.CustId, SUM(d.Amount * e.Rate)
 		FROM (
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(Amount) AS Amount
-			FROM dbo.DepositInfo WITH (NOLOCK)
+			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND SiteId = @SiteId
 				AND Status = 3 -- Approved
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) d
 			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -174,11 +184,12 @@ BEGIN
 		SELECT w.CustId, SUM(w.Amount * e.Rate)
 		FROM (
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(Amount) AS Amount
-			FROM dbo.WithdrawalInfo WITH (NOLOCK)
+			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND SiteId = @SiteId
 				AND Status = 6 -- Approved
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) w
 			INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -235,6 +246,7 @@ BEGIN
 					LEFT JOIN #WithdrawalInfo w ON w.CustId = c.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) r
 		) t
 		WHERE RowId BETWEEN @RowStart AND @RowEnd

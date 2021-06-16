@@ -10,6 +10,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Winloss_Detail]
 	,@UserName					VARCHAR(30) = ''
 	,@CurrencyIds				VARCHAR(MAX)
 	,@DisplayCurrency			VARCHAR(3)
+	,@IsIncludedFreeSpin		BIT
 	,@IsNoDrawTicket			BIT
 	,@IsIncludedTestData		BIT
 	,@IsDetailInOriginalCurr	BIT = 0
@@ -23,6 +24,7 @@ AS
 	
 	Revisions:
 		- 20210305@Percy: Initialize [Redmine:#151187]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 */
 
 BEGIN
@@ -67,7 +69,10 @@ BEGIN
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
 	
-	DECLARE @MinDate DATE, @MaxDate DATE
+	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
+
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
 	
 	---- by winlostdate
 	IF (@FilterBy = 1)
@@ -110,12 +115,7 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
 					ISNULL(@UserName,'') = ''
@@ -180,12 +180,7 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
 					ISNULL(@UserName,'') = ''

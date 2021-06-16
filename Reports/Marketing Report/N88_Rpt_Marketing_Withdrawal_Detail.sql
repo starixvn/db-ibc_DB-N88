@@ -3,6 +3,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Withdrawal_Detail]
 	@LicenseeId			INT
 	,@FromDate			DATE
 	,@ToDate			DATE
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 	,@SortbyId			TINYINT = 1
@@ -20,6 +21,7 @@ AS
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
 		- 20210401@Percy: Add Currency column [RedmineID: #150876]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 
 	Param's Explanation:
 		@SortbyId:
@@ -60,14 +62,18 @@ BEGIN
 					AND w.SiteId = @SiteId
 					AND w.Status = 6
 					AND w.CreateTime >= @FromDateTimeGMT AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			) w
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
 			AND w.CustId IS NOT NULL
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '')
+		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 		
 		DECLARE @RowStart INT, @RowEnd INT
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
@@ -78,11 +84,12 @@ BEGIN
 		SELECT w.CustId, SUM(w.Amount * e.Rate), SUM(w.BetCount)
 		FROM (
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(Amount) AS Amount, COUNT(1) AS BetCount
-			FROM dbo.WithdrawalInfo WITH (NOLOCK)
+			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND SiteId = @SiteId
 				AND Status = 6
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) w
 			INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -115,6 +122,7 @@ BEGIN
 					INNER JOIN #WithdrawalInfo w ON c.CustId = w.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) c
 		) r
 		WHERE RowId BETWEEN @RowStart AND @RowEnd

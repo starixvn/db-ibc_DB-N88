@@ -6,6 +6,7 @@ ALTER PROCEDURE [dbo].N88_Rpt_Winloss_Player_Detail
 	,@ProductIds				VARCHAR(MAX)
 	,@CustId					INT
 	,@DisplayCurrency			VARCHAR(3)
+	,@IsIncludedFreeSpin		BIT
 	,@IsNoDrawTicket			BIT
 	,@TimeZone					SMALLINT = 8
 	
@@ -18,6 +19,7 @@ AS
 	
 	Revisions:
 		- 20210423@Sol: Initial sp - Add player detail section - [Redmine:#139333]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 
 	Param's Explanation:
 		@SortbyId:
@@ -78,7 +80,10 @@ BEGIN
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
 	
-	DECLARE @MinDate DATE, @MaxDate DATE
+	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
+
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
 	
 	---- by winlostdate
 	IF (@FilterBy = 1)
@@ -130,12 +135,7 @@ BEGIN
 				AND r.CustId = @CustId
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND r.Currency = @CurrencyId
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)), r.Currency, r.GameType
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
@@ -196,12 +196,7 @@ BEGIN
 				AND r.CustId = @CustId
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND r.Currency = @CurrencyId
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.StatusId IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.StatusId IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)),r.Currency, r.GameType
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId

@@ -7,6 +7,7 @@ ALTER PROCEDURE [dbo].N88_Rpt_Winloss_BetList
 	@ProductId INT,
 	@CustId VARCHAR(45),
 	@DisplayCurrency VARCHAR(3),
+	@IsIncludedFreeSpin BIT,
 	@IsNoDrawTicket BIT,
 	@TimeZone SMALLINT = -4,
 	@PageIndex INT = 1,
@@ -24,6 +25,7 @@ AS
 	
 	Revisions:
 		- 20210423@Sol: Initial sp - Detail betlist for non-sport - [Redmine:#139333]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 
 	Param's Explanation:
 		@SortbyId:
@@ -74,7 +76,10 @@ BEGIN
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
 	
-	DECLARE @MinDate DATE, @MaxDate DATE
+	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
+
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
+	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
 	
 	---- by winlostdate
 	IF (@FilterBy = 1)
@@ -125,12 +130,7 @@ BEGIN
 				AND r.CustId = @CustId
 				AND r.CurrencyId = @CurrencyId
 				AND r.GameType = @ProductId
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.TicketStatus IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.TicketStatus IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.TicketStatus) + ',%'
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
 		GROUP BY r.TpId, r.TransId, r.GameType, r.rptDate, r.TicketStatus
@@ -189,12 +189,7 @@ BEGIN
 				AND r.CustId = @CustId
 				AND r.CurrencyId = @CurrencyId
 				AND r.GameType = @ProductId
-				AND 1 = 
-						CASE 
-							WHEN @IsNoDrawTicket = 1 AND r.TicketStatus IN (1,2,6) THEN 1
-							WHEN @IsNoDrawTicket = 0 AND r.TicketStatus IN (1,2,4,6) THEN 1
-							ELSE 0
-						END
+				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.TicketStatus) + ',%'
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
 		GROUP BY r.TpId, r.TransId, r.GameType, r.rptDate, r.TicketStatus

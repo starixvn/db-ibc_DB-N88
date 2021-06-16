@@ -5,6 +5,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Withdrawal]
 	,@ToDate			DATE
 	,@CompareFromDate	DATE = NULL
 	,@CompareToDate		DATE = NULL
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 AS
@@ -16,6 +17,7 @@ AS
 
 	Revisions:
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
+		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 */
 
 BEGIN
@@ -49,7 +51,9 @@ BEGIN
 			
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+			SELECT FromDate, ToDate, ExchangeId, Rate 
+			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 			SELECT @WithdrawalAmount = SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
 				,@WithdrawalUsers = COUNT(DISTINCT w.CustId)
@@ -62,6 +66,7 @@ BEGIN
 				AND w.SiteId = @SiteId
 				AND w.Status = 6
 				AND c.IsTest = 0
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 		END
 
 		-- Get data for compare
@@ -70,7 +75,9 @@ BEGIN
 		
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+			SELECT FromDate, ToDate, ExchangeId, Rate 
+			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 		
 			SELECT @CompareWithdrawalAmount = SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)
 				,@CompareWithdrawalUsers = COUNT(DISTINCT w.CustId)
@@ -83,6 +90,7 @@ BEGIN
 				AND w.SiteId = @SiteId
 				AND w.Status = 6
 				AND c.IsTest = 0
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 		END
 	END
 
