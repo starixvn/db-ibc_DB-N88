@@ -62,6 +62,7 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
+	DECLARE @TotalBasedClosingBalance MONEY
 	DECLARE @FDate DATE, @TDate DATE
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
@@ -913,7 +914,7 @@ BEGIN
 			INNER JOIN CTE_Result r ON f.GroupId = r.GroupId
 
 	--return data
-	SELECT @TotalRows = MAX(GroupId) FROM #__FinalResult
+	SELECT @TotalRows = MAX(GroupId), @TotalBasedClosingBalance = SUM(BasedClosingBalance) FROM #__FinalResult
 
 	SELECT RowNumber,
 		[Group]
@@ -965,10 +966,8 @@ BEGIN
 		,ISNULL(CAST(SUM(BasedDepositAmount) AS MONEY), 0) AS TotalBasedDepositAmount
 		,ISNULL(SUM(NumberOfWithdrawal), 0) AS TotalNumberOfWithdrawal
 		,ISNULL(CAST(SUM(BasedWithdrawalAmount) AS MONEY), 0) AS TotalBasedWithdrawalAmount
-		,ISNULL(MAX(CASE WHEN @TimeZone IN (7, 8) THEN cb.BasedClosingBalance ELSE 0 END), 0) AS TotalBasedClosingBalance
+		,@TotalBasedClosingBalance AS TotalBasedClosingBalance
 	FROM #__N88_SumWinloss s
-		LEFT JOIN #__ClosingBalance cb
-			ON s.CustId = cb.CustId
 
 	DROP TABLE #__FinalResult
 	DROP TABLE #__N88_SumWinloss
