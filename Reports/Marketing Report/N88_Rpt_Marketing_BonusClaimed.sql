@@ -54,14 +54,15 @@ BEGIN
 			
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+			SELECT FromDate, ToDate, ExchangeId, Rate
 			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
 			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
 			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
 			FROM (
-				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount
+				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
+					SUM(b.BonusAmount / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -77,7 +78,8 @@ BEGIN
 			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
 			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
 			FROM (
-				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(r.RedeemAmount) AS BonusAmount
+				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
+				SUM(r.RedeemAmount / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
 				FROM dbo.RebateMLog r WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -97,14 +99,15 @@ BEGIN
 			
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+			SELECT FromDate, ToDate, ExchangeId, Rate
 			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
 			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
 			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
 			FROM (
-				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount
+				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
+				SUM(b.BonusAmount  / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -120,7 +123,8 @@ BEGIN
 			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
 			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
 			FROM (
-				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, SUM(r.RedeemAmount) AS BonusAmount
+				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
+				SUM(r.RedeemAmount  / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
 				FROM dbo.RebateMLog r WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
