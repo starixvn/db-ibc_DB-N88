@@ -5,6 +5,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_BonusInfo_Detail]
 	,@ClaimedStatusIds	VARCHAR(MAX) = ''
 	,@FromDate			DATE
 	,@ToDate			DATE
+	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 	,@SortbyId			TINYINT = 1
@@ -21,6 +22,7 @@ AS
 
 	Revisions:
 		- 20200105@Percy: Initialize SP [RedmineID: #146759]
+		- 20210629@Sol: MPA - Apply Currency permission - [RedmineID: #157588]
 
 	Param's Explanation:
 		@SortbyId:
@@ -56,7 +58,8 @@ BEGIN
 
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
 		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '')
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		-- Data on GMT+0 --> convert timezone
 		SELECT  @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
@@ -76,31 +79,35 @@ BEGIN
 			AND b.SiteId = @SiteId
 			AND b.BonusCode = @BonusCode
 			AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 
 		INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
 		SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), RedeemAmount
-		FROM dbo.RebateMLog WITH (NOLOCK)
+		FROM dbo.RebateMLog r WITH (NOLOCK)
 		WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND SiteId = @SiteId
 			AND BonusCode = @BonusCode
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
 
 		INSERT INTO #DepositInfo (CustId, CurrencyId, ExchangeDate, Amount)
 		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
-		FROM dbo.DepositInfo WITH (NOLOCK)
+		FROM dbo.DepositInfo d WITH (NOLOCK)
 		WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND Status = 3 -- Approved
 			AND SiteId = @SiteId
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 
 		INSERT INTO #WithdrawalInfo (CustId, CurrencyId, ExchangeDate, Amount)
 		SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
-		FROM dbo.WithdrawalInfo WITH (NOLOCK)
+		FROM dbo.WithdrawalInfo w WITH (NOLOCK)
 		WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND Status = 6 -- Approved
 			AND SiteId = @SiteId
+			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 		GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 
 		DELETE b
