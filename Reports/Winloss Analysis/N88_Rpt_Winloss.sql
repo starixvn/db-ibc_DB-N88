@@ -1,4 +1,7 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
+USE bodb_N88
+GO
+
 ALTER PROCEDURE [dbo].[N88_Rpt_Winloss]
 	@LicenseeIds				VARCHAR(MAX)
 	,@FilterBy					TINYINT
@@ -42,6 +45,7 @@ AS
 			+ include free spin filter
 			+ add closing balance to the report
 		- 20210616@Sol: MPA - Hotfix - Incorrect closing balance - [RedmineID: #157073]
+		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 
 	Param's Explanation:
 		@SortbyId:
@@ -50,14 +54,17 @@ AS
 			.  3 = Valid Turnover
 			.  4 = GGR
 			.  5 = Player Win Loss
-			.  6 = BetCount
-			.  7 = Avg Bet Amount
-			.  8 = Unique Players
-			.  9 = Margin
-			. 10 = No. Deposit
-			. 11 = Total Deposit Amount
-			. 12 = No. Withdrawal
-			. 13 = Total Withdrawal Amount
+			.  6 = Progressive Win
+			.  7 = Progressive Bet
+			.  8 = BetCount
+			.  9 = Avg Bet Amount
+			. 10 = Unique Players
+			. 11 = Margin
+			. 12 = Closing Balance
+			. 13 = No. Deposit
+			. 14 = Total Deposit Amount
+			. 15 = No. Withdrawal
+			. 16 = Total Withdrawal Amount
 */
 
 BEGIN
@@ -93,6 +100,8 @@ BEGIN
 		,Revenue					MONEY
 		,RevenueForMargin			MONEY
 		,Winloss					MONEY
+		,ProgressiveWin				MONEY
+		,ProgressiveBet				MONEY
 		,BasedTurnOver				MONEY
 		,BasedNetTurnOver			MONEY
 		,BasedNetTurnOverForMargin	MONEY
@@ -100,6 +109,8 @@ BEGIN
 		,BasedRevenue				MONEY
 		,BasedRevenueForMargin		MONEY
 		,BasedWinloss				MONEY
+		,BasedProgressiveWin		MONEY
+		,BasedProgressiveBet		MONEY
 		,NumberOfDeposit			INT
 		,DepositAmount				MONEY
 		,BasedDepositAmount			MONEY
@@ -132,8 +143,8 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss
 		(
 			rptDate, GameType, CustId, CurrencyId
-			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, TurnoverNoDraw, Revenue, RevenueForMargin, Winloss
-			,BasedTurnOver, BasedNetTurnOver, BasedNetTurnOverForMargin, BasedTurnoverNoDraw, BasedRevenue, BasedRevenueForMargin, BasedWinloss
+			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, TurnoverNoDraw, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
+			,BasedTurnOver, BasedNetTurnOver, BasedNetTurnOverForMargin, BasedTurnoverNoDraw, BasedRevenue, BasedRevenueForMargin, BasedWinloss, BasedProgressiveWin, BasedProgressiveBet
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -144,6 +155,8 @@ BEGIN
 			,SUM(Revenue)
 			,SUM(RevenueForMargin)
 			,SUM(Winloss)
+			,SUM(ProgressiveWin)
+			,SUM(ProgressiveBet)
 			,SUM(TurnOver * e.Rate)
 			,SUM(NetTurnOver * e.Rate)
 			,SUM(NetTurnOverForMargin * e.Rate)
@@ -151,6 +164,8 @@ BEGIN
 			,SUM(Revenue * e.Rate)
 			,SUM(RevenueForMargin * e.Rate)
 			,SUM(Winloss * e.Rate)
+			,SUM(ProgressiveWin * e.Rate)
+			,SUM(ProgressiveBet * e.Rate)
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -162,9 +177,11 @@ BEGIN
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN Revenue ELSE -Winloss END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -Winloss END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
+				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
+				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
@@ -207,8 +224,8 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss
 		(
 			rptDate, GameType, CustId, CurrencyId
-			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, TurnoverNoDraw, Revenue, RevenueForMargin, Winloss
-			,BasedTurnOver, BasedNetTurnOver, BasedNetTurnOverForMargin, BasedTurnoverNoDraw, BasedRevenue, BasedRevenueForMargin, BasedWinloss
+			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, TurnoverNoDraw, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
+			,BasedTurnOver, BasedNetTurnOver, BasedNetTurnOverForMargin, BasedTurnoverNoDraw, BasedRevenue, BasedRevenueForMargin, BasedWinloss, BasedProgressiveWin, BasedProgressiveBet
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -219,6 +236,8 @@ BEGIN
 			,SUM(Revenue)
 			,SUM(RevenueForMargin)
 			,SUM(Winloss)
+			,SUM(ProgressiveWin)
+			,SUM(ProgressiveBet)
 			,SUM(TurnOver * e.Rate)
 			,SUM(NetTurnOver * e.Rate)
 			,SUM(NetTurnOverForMargin * e.Rate)
@@ -226,6 +245,8 @@ BEGIN
 			,SUM(Revenue * e.Rate)
 			,SUM(RevenueForMargin * e.Rate)
 			,SUM(Winloss * e.Rate)
+			,SUM(ProgressiveWin * e.Rate)
+			,SUM(ProgressiveBet * e.Rate)
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -237,9 +258,11 @@ BEGIN
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN Revenue ELSE -Winloss END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -Winloss END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
+				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
+				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
@@ -443,6 +466,10 @@ BEGIN
 		,BasedGGRForMargin			MONEY
 		,PlayerWinloss				MONEY
 		,BasedPlayerWinloss			MONEY
+		,ProgressiveWin				MONEY
+		,ProgressiveBet				MONEY
+		,BasedProgressiveWin		MONEY
+		,BasedProgressiveBet		MONEY
 		,BetCount					INT
 		,AvgBetAmount				MONEY
 		,BasedAvgBetAmount			MONEY
@@ -478,6 +505,10 @@ BEGIN
 			,BasedGGRForMargin
 			,PlayerWinloss
 			,BasedPlayerWinloss
+			,ProgressiveWin
+			,ProgressiveBet
+			,BasedProgressiveWin
+			,BasedProgressiveBet
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -509,6 +540,10 @@ BEGIN
 			,SUM(BasedRevenueForMargin)
 			,SUM(Winloss)
 			,SUM(BasedWinloss)
+			,SUM(ProgressiveWin)
+			,SUM(ProgressiveBet)
+			,SUM(BasedProgressiveWin)
+			,SUM(BasedProgressiveBet)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -548,6 +583,10 @@ BEGIN
 			,BasedGGRForMargin
 			,PlayerWinloss
 			,BasedPlayerWinloss
+			,ProgressiveWin
+			,ProgressiveBet
+			,BasedProgressiveWin
+			,BasedProgressiveBet
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -570,6 +609,10 @@ BEGIN
 			,SUM(BasedRevenueForMargin)
 			,SUM(Winloss)
 			,SUM(BasedWinloss)
+			,SUM(ProgressiveWin)
+			,SUM(ProgressiveBet)
+			,SUM(BasedProgressiveWin)
+			,SUM(BasedProgressiveBet)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -601,6 +644,10 @@ BEGIN
 			,BasedGGRForMargin
 			,PlayerWinloss
 			,BasedPlayerWinloss
+			,ProgressiveWin
+			,ProgressiveBet
+			,BasedProgressiveWin
+			,BasedProgressiveBet
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -629,6 +676,10 @@ BEGIN
 			,SUM(BasedRevenueForMargin)
 			,SUM(Winloss)
 			,SUM(BasedWinloss)
+			,SUM(ProgressiveWin)
+			,SUM(ProgressiveBet)
+			,SUM(BasedProgressiveWin)
+			,SUM(BasedProgressiveBet)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -662,6 +713,10 @@ BEGIN
 				,BasedRevenue = SUM(BasedRevenue)
 				,RevenueForMargin = SUM(RevenueForMargin)
 				,BasedRevenueForMargin = SUM(BasedRevenueForMargin)
+				,ProgressiveWin = SUM(ProgressiveWin)
+				,ProgressiveBet = SUM(ProgressiveBet)
+				,BasedProgressiveWin = SUM(BasedProgressiveWin)
+				,BasedProgressiveBet = SUM(BasedProgressiveBet)
 				,BetCount = SUM(BetCount)
 				,NumberOfDeposit = SUM(NumberOfDeposit)	
 				,DepositAmount = SUM(DepositAmount)
@@ -693,6 +748,10 @@ BEGIN
 			,BasedGGRForMargin
 			,PlayerWinloss
 			,BasedPlayerWinloss
+			,ProgressiveWin
+			,ProgressiveBet
+			,BasedProgressiveWin
+			,BasedProgressiveBet
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -726,6 +785,10 @@ BEGIN
 			,r.BasedRevenueForMargin
 			,r.Winloss
 			,r.BasedWinloss
+			,r.ProgressiveWin
+			,r.ProgressiveBet
+			,r.BasedProgressiveWin
+			,r.BasedProgressiveBet
 			,r.BetCount
 			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE NetTurnOver/BetCount END
 			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE BasedNetTurnOver/BetCount END
@@ -768,6 +831,10 @@ BEGIN
 		,BasedGGRForMargin			MONEY
 		,PlayerWinloss				MONEY
 		,BasedPlayerWinloss			MONEY
+		,ProgressiveWin				MONEY
+		,ProgressiveBet				MONEY
+		,BasedProgressiveWin		MONEY
+		,BasedProgressiveBet		MONEY
 		,BetCount					INT
 		,AvgBetAmount				MONEY
 		,BasedAvgBetAmount			MONEY
@@ -807,6 +874,10 @@ BEGIN
 		,BasedGGRForMargin
 		,PlayerWinloss
 		,BasedPlayerWinloss
+		,ProgressiveWin
+		,ProgressiveBet
+		,BasedProgressiveWin
+		,BasedProgressiveBet
 		,BetCount
 		,AvgBetAmount
 		,BasedAvgBetAmount
@@ -841,6 +912,10 @@ BEGIN
 		,ISNULL(BasedGGRForMargin, 0)
 		,ISNULL(PlayerWinloss, 0)
 		,ISNULL(BasedPlayerWinloss, 0)
+		,ISNULL(ProgressiveWin, 0)
+		,ISNULL(ProgressiveBet, 0)
+		,ISNULL(BasedProgressiveWin, 0)
+		,ISNULL(BasedProgressiveBet, 0)
 		,ISNULL(BetCount, 0)
 		,AvgBetAmount
 		,BasedAvgBetAmount
@@ -872,30 +947,36 @@ BEGIN
 					,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN BasedGGR END DESC
 					,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN BasedPlayerWinloss END ASC
 					,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN BasedPlayerWinloss END DESC
-					,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN BetCount END ASC
-					,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN BetCount END DESC
-					,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN BasedAvgBetAmount END ASC
-					,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN BasedAvgBetAmount END DESC
-					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN UniquePlayers END ASC
-					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN UniquePlayers END DESC
-					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 1 THEN Margin END ASC
-					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 0 THEN Margin END DESC
-					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN BasedClosingBalance END ASC
-					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN BasedClosingBalance END DESC
-					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN NumberOfDeposit END ASC
-					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN NumberOfDeposit END DESC
-					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN BasedDepositAmount END ASC
-					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN BasedDepositAmount END DESC
-					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
-					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
-					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
-					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC) AS RowNumber
+					,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN BasedProgressiveWin END ASC
+					,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN BasedProgressiveWin END DESC
+					,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN BasedProgressiveBet END ASC
+					,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN BasedProgressiveBet END DESC
+					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN BetCount END ASC
+					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN BetCount END DESC
+					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 1 THEN BasedAvgBetAmount END ASC
+					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 0 THEN BasedAvgBetAmount END DESC
+					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN UniquePlayers END ASC
+					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN UniquePlayers END DESC
+					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN Margin END ASC
+					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN Margin END DESC
+					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN BasedClosingBalance END ASC
+					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN BasedClosingBalance END DESC
+					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN NumberOfDeposit END ASC
+					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN NumberOfDeposit END DESC
+					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 1 THEN BasedDepositAmount END ASC
+					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 0 THEN BasedDepositAmount END DESC
+					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
+					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
+					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
+					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC) AS RowNumber
 			FROM (
 				SELECT GroupId
 					,SUM(BasedTurnover) AS BasedTurnover
 					,SUM(BasedNetTurnover) AS BasedNetTurnover
 					,SUM(-BasedGGR) AS BasedGGR
 					,SUM(BasedPlayerWinloss) AS BasedPlayerWinloss
+					,SUM(BasedProgressiveWin) AS BasedProgressiveWin
+					,SUM(BasedProgressiveBet) AS BasedProgressiveBet
 					,SUM(BetCount) AS BetCount
 					,ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS BasedAvgBetAmount
 					,SUM(UniquePlayers) AS UniquePlayers
@@ -935,6 +1016,10 @@ BEGIN
 		,BasedGGRForMargin
 		,PlayerWinloss
 		,BasedPlayerWinloss
+		,ProgressiveWin
+		,ProgressiveBet
+		,BasedProgressiveWin
+		,BasedProgressiveBet
 		,BetCount
 		,AvgBetAmount
 		,BasedAvgBetAmount
@@ -960,6 +1045,8 @@ BEGIN
 		,CAST(SUM(BasedRevenue) AS MONEY) AS TotalBasedGGR
 		,CAST(SUM(BasedRevenueForMargin) AS MONEY) AS TotalBasedGGRForMargin
 		,CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedPlayerWinloss
+		,CAST(SUM(BasedProgressiveWin) AS MONEY) AS TotalBasedProgressiveWin
+		,CAST(SUM(BasedProgressiveBet) AS MONEY) AS TotalBasedProgressiveBet
 		,SUM(BetCount) AS TotalBetCount
 		,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
 		,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN s.CustId ELSE NULL END)) AS TotalUniquePlayers

@@ -1,4 +1,7 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
+USE bodb_N88
+GO
+
 ALTER PROCEDURE [dbo].N88_Rpt_Winloss_BetList
 (
 	@FilterBy TINYINT,
@@ -26,6 +29,7 @@ AS
 	Revisions:
 		- 20210423@Sol: Initial sp - Detail betlist for non-sport - [Redmine:#139333]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
+		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 
 	Param's Explanation:
 		@SortbyId:
@@ -33,8 +37,10 @@ AS
 			.  2 = Trans time
 			.  3 = Stake
 			.  4 = Player winloss
-			.  5 = GGR
-			.  6 = Status
+			.  5 = Progressive Win
+			.  6 = Progressive Bet
+			.  7 = GGR
+			.  8 = Status
 
 */
 
@@ -62,10 +68,14 @@ BEGIN
 		TransTime DATETIME,
 		Stake MONEY,
 		PlayerWinLoss MONEY,
+		ProgressiveWin MONEY,
+		ProgressiveBet MONEY,
 		GGR MONEY,
 		TicketStatus VARCHAR(100),
 		BasedStake MONEY,
 		BasedPlayerWinLoss MONEY,
+		BasedProgressiveWin MONEY,
+		BasedProgressiveBet MONEY,
 		BasedGGR MONEY,
 		TpId INT,
 		GameType INT
@@ -91,8 +101,8 @@ BEGIN
 
 		INSERT INTO #__N88_BetList
 		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus,
-			BasedStake, BasedPlayerWinLoss, BasedGGR, TpId, GameType
+			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, ProgressiveWin, ProgressiveBet, GGR, TicketStatus,
+			BasedStake, BasedPlayerWinLoss, BasedProgressiveWin, BasedProgressiveBet, BasedGGR, TpId, GameType
 		)
 		SELECT 
 			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
@@ -100,6 +110,8 @@ BEGIN
 			r.rptDate AS TransTime,
 			SUM(r.Stake) AS Stake,
 			SUM(r.WinlostAmount) AS PlayerWinLoss,
+			SUM(r.ProgressiveWin) AS ProgressiveWin,
+			SUM(r.ProgressiveBet) AS ProgressiveBet,
 			SUM(r.Revenue) AS GGR,
 			CASE 
 				WHEN r.TicketStatus = 1 THEN 'Won'
@@ -109,6 +121,8 @@ BEGIN
 			END AS TicketStatus,
 			SUM(r.Stake * e.Rate) AS BasedStake,
 			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
+			SUM(r.ProgressiveWin * e.Rate) AS BasedProgressiveWin,
+			SUM(r.ProgressiveBet * e.Rate) AS BasedProgressiveBet,
 			SUM(r.Revenue * e.Rate) AS BasedGGR,
 			r.TpId,
 			r.GameType
@@ -120,7 +134,9 @@ BEGIN
 				, r.TransId
 				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -r.WinlostAmount END)/ (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
+				, ISNULL(r.ProgressiveWin, 0) AS ProgressiveWin
+				, ISNULL(r.ProgressiveBet, 0) AS ProgressiveBet
+				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)/ (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
 				, r.GameType
@@ -150,8 +166,8 @@ BEGIN
 
 		INSERT INTO #__N88_BetList
 		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, TicketStatus,
-			BasedStake, BasedPlayerWinLoss, BasedGGR, TpId, GameType
+			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, ProgressiveWin, ProgressiveBet, TicketStatus,
+			BasedStake, BasedPlayerWinLoss, BasedProgressiveWin, BasedProgressiveBet, BasedGGR, TpId, GameType
 		)
 		SELECT
 			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
@@ -159,6 +175,8 @@ BEGIN
 			r.rptDate AS TransTime,
 			SUM(r.Stake) AS Stake,
 			SUM(r.WinlostAmount) AS PlayerWinLoss,
+			SUM(r.ProgressiveWin) AS ProgressiveWin,
+			SUM(r.ProgressiveBet) AS ProgressiveBet,
 			SUM(r.Revenue) AS GGR,
 			CASE 
 				WHEN r.TicketStatus = 1 THEN 'Won'
@@ -168,6 +186,8 @@ BEGIN
 			END AS TicketStatus,
 			SUM(r.Stake * e.Rate) AS BasedStake,
 			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
+			SUM(r.ProgressiveWin * e.Rate) AS BasedProgressiveWin,
+			SUM(r.ProgressiveBet * e.Rate) AS BasedProgressiveBet,
 			SUM(r.Revenue * e.Rate) AS BasedGGR,
 			r.TpId,
 			r.GameType
@@ -179,7 +199,9 @@ BEGIN
 				, r.TransId
 				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -r.WinlostAmount END) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
+				, ISNULL(r.ProgressiveWin, 0) AS ProgressiveWin
+				, ISNULL(r.ProgressiveBet, 0) AS ProgressiveBet
+				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
 				, r.GameType
@@ -223,10 +245,14 @@ BEGIN
 						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN t.Stake END DESC,
 						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN t.PlayerWinLoss END ASC,
 						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN t.PlayerWinLoss END DESC,
-						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN t.GGR END ASC,
-						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN t.GGR END DESC,
-						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN t.TicketStatus END ASC,
-						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN t.TicketStatus END DESC
+						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN t.ProgressiveWin END ASC,
+						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN t.ProgressiveWin END DESC,
+						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN t.ProgressiveBet END ASC,
+						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN t.ProgressiveBet END DESC,
+						CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN t.GGR END ASC,
+						CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN t.GGR END DESC,
+						CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN t.TicketStatus END ASC,
+						CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN t.TicketStatus END DESC
 				) AS NewRowNumber
 		FROM #__N88_BetList t
 	)
@@ -236,13 +262,23 @@ BEGIN
 		INNER JOIN rs 
 			ON t.RefNo = rs.RefNo AND t.TpId = rs.TpId AND t.GameType = rs.GameType
 
-	SELECT t.RowNumber, t.RefNo, t.TransTime, t.Stake, t.BasedStake, t.PlayerWinLoss, t.BasedPlayerWinLoss, t.GGR, t.BasedGGR, t.TicketStatus
+	SELECT t.RowNumber, t.RefNo, t.TransTime
+		,t.Stake, t.BasedStake
+		,t.PlayerWinLoss, t.BasedPlayerWinLoss
+		,t.ProgressiveWin, t.BasedProgressiveWin
+		,t.ProgressiveBet, t.BasedProgressiveBet
+		,t.GGR, t.BasedGGR
+		,t.TicketStatus
 	FROM #__N88_BetList t
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
 	ORDER BY t.RowNumber
 
 	--data in total
-	SELECT SUM(t.PlayerWinLoss) AS TotalPlayerWinLoss, SUM(t.BasedPlayerWinLoss) AS TotalBasedPlayerWinLoss, SUM(t.GGR) AS TotalGGR, SUM(t.BasedGGR) AS TotalBasedGGR
+	SELECT
+		SUM(t.PlayerWinLoss) AS TotalPlayerWinLoss, SUM(t.BasedPlayerWinLoss) AS TotalBasedPlayerWinLoss
+		,SUM(t.ProgressiveWin) AS TotalProgressiveWin, SUM(t.BasedProgressiveWin) AS TotalBasedProgressiveWin
+		,SUM(t.ProgressiveBet) AS TotalProgressiveBet, SUM(t.BasedProgressiveBet) AS TotalBasedProgressiveBet
+		,SUM(t.GGR) AS TotalGGR, SUM(t.BasedGGR) AS TotalBasedGGR
 	FROM #__N88_BetList t
 
 	DROP TABLE #__N88_BetList

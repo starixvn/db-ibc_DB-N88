@@ -1,4 +1,7 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
+USE bodb_N88
+GO
+
 ALTER PROCEDURE [dbo].[N88_Rpt_Winloss_Detail]
 	@LicenseeIds				VARCHAR(MAX)
 	,@FilterBy					TINYINT
@@ -25,6 +28,7 @@ AS
 	Revisions:
 		- 20210305@Percy: Initialize [Redmine:#151187]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
+		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 */
 
 BEGIN
@@ -58,6 +62,8 @@ BEGIN
 		,Revenue					MONEY
 		,RevenueForMargin			MONEY
 		,Winloss					MONEY
+		,ProgressiveWin				MONEY
+		,ProgressiveBet				MONEY
 		,NumberOfDeposit			INT
 		,DepositAmount				MONEY
 		,NumberOfWithdrawal			INT
@@ -85,7 +91,7 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss
 		(
 			rptDate, GameType, CustId, CurrencyId
-			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss
+			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -95,6 +101,8 @@ BEGIN
 			,SUM(Revenue * e.Rate)
 			,SUM(RevenueForMargin * e.Rate)
 			,SUM(Winloss * e.Rate)
+			,SUM(ProgressiveWin * e.Rate)
+			,SUM(ProgressiveBet * e.Rate)
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -105,9 +113,11 @@ BEGIN
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN Revenue ELSE -Winloss END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -Winloss END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
+				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
+				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
@@ -150,7 +160,7 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss
 		(
 			rptDate, GameType, CustId, CurrencyId
-			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss
+			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
 		)
 		SELECT rptDate, GameType, CustId, Currency
 			,SUM(BetCount)
@@ -160,6 +170,8 @@ BEGIN
 			,SUM(Revenue * e.Rate)
 			,SUM(RevenueForMargin * e.Rate)
 			,SUM(Winloss * e.Rate)
+			,SUM(ProgressiveWin * e.Rate)
+			,SUM(ProgressiveBet * e.Rate)
 		FROM (
 			SELECT
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
@@ -170,9 +182,11 @@ BEGIN
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN Revenue ELSE -Winloss END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -Winloss END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
+				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
+				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
@@ -291,6 +305,8 @@ BEGIN
 			,NetTurnOver = SUM(NetTurnOver)
 			,NetTurnOverForMargin = SUM(NetTurnOverForMargin)
 			,Winloss = SUM(Winloss)
+			,ProgressiveWin = SUM(ProgressiveWin)
+			,ProgressiveBet = SUM(ProgressiveBet)
 			,Revenue = SUM(Revenue)
 			,RevenueForMargin = SUM(RevenueForMargin)
 			,BetCount = SUM(BetCount)
@@ -318,6 +334,8 @@ BEGIN
 		,r.NetTurnOver
 		,r.Revenue AS GGR
 		,r.Winloss AS PlayerWinloss
+		,r.ProgressiveWin
+		,r.ProgressiveBet
 		,r.BetCount
 		,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE NetTurnOver/BetCount END AS AvgBetAmount
 		,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE 1 END AS UniquePlayers
