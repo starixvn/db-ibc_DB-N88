@@ -20,6 +20,7 @@ AS
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
 		- 20201118@Kos: Support default base currency [RedmineID: #145346]
+		- 20210715@Hogan: Apply Date Range permission [RedmineID: #158257]
 
 	Param's Explanation:
 		- @Environment: UAT or LIVE
@@ -222,6 +223,7 @@ BEGIN
 		,u.Email
 		,u.DefaultBaseCurrencyId
 		,e.Code AS DefaultBaseCurrencyCode
+		,u.DataRangeLimitation
 		,u.userpwd
 		,us.LastLoginDate
 		,u.CreatedDate
