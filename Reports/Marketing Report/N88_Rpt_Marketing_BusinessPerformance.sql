@@ -92,7 +92,12 @@ BEGIN
 				AND IsTest = 0
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
-			SELECT @TotalDepositUsers = @TotalDepositUsers - COUNT(CASE WHEN c.ActStatus = 2 THEN 1 ELSE NULL END) + COUNT(d.CustId)
+			SELECT @TotalDepositUsers = @TotalDepositUsers - COUNT
+										(CASE 
+											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
+											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
+											ELSE NULL 
+										END) + COUNT(d.CustId)
 			FROM dbo.Customer c WITH (NOLOCK)
 				LEFT JOIN dbo.DepositInfo d WITH (NOLOCK) ON c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
 			WHERE c.RegTime < '2020-08-15'
