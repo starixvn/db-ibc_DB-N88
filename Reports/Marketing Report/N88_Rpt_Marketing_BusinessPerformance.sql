@@ -111,13 +111,32 @@ BEGIN
 				AND c.IsTest = 0
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				AND (
-					EXISTS (SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK) WHERE c.CustId = r.CustId)
-					OR EXISTS (SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) WHERE c.CustId = t.CustId)
+						EXISTS 
+						(
+							SELECT 1 
+							FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
+							WHERE 
+								c.CustId = r.CustId
+								AND r.SiteId = @SiteId
+								AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+								AND 1 = CASE 
+										WHEN @FromLastXDaysGMT IS NULL THEN 1
+										WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
+									END
+						)
+						OR 
+						EXISTS 
+						(
+							SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) 
+							WHERE 
+								c.CustId = t.CustId
+								AND t.SiteId = @SiteId
+								AND 1 = CASE 
+											WHEN @FromLastXDaysGMT IS NULL THEN 1
+											WHEN t.CreateTime >= @FromLastXDaysGMT THEN 1
+										END
+						)
 				)
-				AND 1 = CASE 
-							WHEN @FromLastXDaysGMT IS NULL THEN 1
-							WHEN c.RegTime >= @FromLastXDaysGMT THEN 1
-						END
 
 		END
 
