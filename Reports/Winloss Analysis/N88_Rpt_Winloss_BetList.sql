@@ -134,8 +134,8 @@ BEGIN
 				, r.TransId
 				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, ISNULL(r.ProgressiveWin, 0) AS ProgressiveWin
-				, ISNULL(r.ProgressiveBet, 0) AS ProgressiveBet
+				, ISNULL(r.ProgressiveWin, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveWin
+				, ISNULL(r.ProgressiveBet, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveBet
 				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)/ (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
@@ -166,7 +166,7 @@ BEGIN
 
 		INSERT INTO #__N88_BetList
 		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, GGR, ProgressiveWin, ProgressiveBet, TicketStatus,
+			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, ProgressiveWin, ProgressiveBet, GGR, TicketStatus,
 			BasedStake, BasedPlayerWinLoss, BasedProgressiveWin, BasedProgressiveBet, BasedGGR, TpId, GameType
 		)
 		SELECT
@@ -199,8 +199,8 @@ BEGIN
 				, r.TransId
 				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, ISNULL(r.ProgressiveWin, 0) AS ProgressiveWin
-				, ISNULL(r.ProgressiveBet, 0) AS ProgressiveBet
+				, ISNULL(r.ProgressiveWin, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)  AS ProgressiveWin
+				, ISNULL(r.ProgressiveBet, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveBet
 				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
