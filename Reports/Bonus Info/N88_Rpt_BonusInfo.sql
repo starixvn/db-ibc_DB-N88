@@ -1,4 +1,7 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+USE bodb_N88
+GO
+
 ALTER PROCEDURE [dbo].[N88_Rpt_BonusInfo]
 	@LicenseeId			INT
 	,@BonusName			VARCHAR(500) = ''
@@ -22,6 +25,7 @@ AS
 		- 20200105@Percy: Initialize SP [RedmineID: #146759]
 		- 20210125@Percy: Add group by Claimed Date, Bonus Code + Add GGR column [RedmineID: #149268]
 		- 20210629@Sol: MPA - Apply Currency permission - [RedmineID: #157588]
+		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 
 	Param's Explanation:
 		@GroupBy
@@ -38,10 +42,10 @@ BEGIN
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
-	CREATE TABLE #BonusInfo (Date DATE, BonusCode VARCHAR(50), CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, BetCount INT, Amount MONEY, GGR MONEY)
+	CREATE TABLE #BonusInfo (Date DATE, BonusCode VARCHAR(50), CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, BetCount INT, Amount MONEY, GGR MONEY, ProgressiveBet MONEY, ProgressiveWin MONEY)
 	CREATE TABLE #DepositInfo (Date DATE, CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (Date DATE, CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
-	CREATE TABLE #TpBetRecord (Date DATE, BonusId INT, CustId INT, CurrencyId INT, ExchangeDate DATE, WinlostAmount MONEY)
+	CREATE TABLE #TpBetRecord (Date DATE, BonusId INT, CustId INT, CurrencyId INT, ExchangeDate DATE, WinlostAmount MONEY, ProgressiveBet MONEY, ProgressiveWin MONEY)
 
 	BEGIN
 		SELECT @SiteId = SiteId
@@ -63,8 +67,11 @@ BEGIN
 		-- Get data
 		IF EXISTS (SELECT 1 FROM bodb02.dbo.strSplit(@BonusTypeIds, ',') WHERE val IN ('1', '2', '3'))
 		BEGIN
-			INSERT INTO #TpBetRecord (Date, BonusId, CustId, CurrencyId, ExchangeDate, WinlostAmount)
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettledTime)), BonusId, CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, SettledTime)), SUM(WinlostAmount)
+			INSERT INTO #TpBetRecord (Date, BonusId, CustId, CurrencyId, ExchangeDate, WinlostAmount, ProgressiveBet, ProgressiveWin)
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettledTime)), BonusId, CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, SettledTime))
+				,SUM(CASE WHEN GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE ISNULL(WinlostAmount, 0) - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0) END)
+				,SUM(ISNULL(ProgressiveBet, 0))
+				,SUM(ISNULL(ProgressiveWin, 0))
 			FROM dbo.TpBetRecord t WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND SettledTime >= @FromDateTimeGMT AND SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT)
@@ -75,16 +82,16 @@ BEGIN
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettledTime)), BonusId, CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, SettledTime))
 
 			UPDATE tb
-			SET tb.WinlostAmount = tb.WinlostAmount * e.Rate
+			SET tb.WinlostAmount = tb.WinlostAmount * e.Rate, tb.ProgressiveBet = tb.ProgressiveBet * e.Rate, tb.ProgressiveWin = tb.ProgressiveWin * e.Rate
 			FROM #TpBetRecord tb
 				INNER JOIN #Exchange e ON tb.CurrencyId = e.ExchangeId AND tb.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 
-			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, Status, ExchangeDate, BetCount, Amount, GGR)
+			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, Status, ExchangeDate, BetCount, Amount, GGR, ProgressiveBet, ProgressiveWin)
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)), b.BonusCode, b.CustId, b.CurrencyId, b.Status, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime))
-				,COUNT(1) AS BetCount, SUM(b.BonusAmount) AS Amount, -SUM(ISNULL(tb.WinlostAmount, 0))
+				,COUNT(1) AS BetCount, SUM(b.BonusAmount) AS Amount, -SUM(ISNULL(tb.WinlostAmount, 0)) AS GGR, SUM(ISNULL(tb.ProgressiveBet, 0)) AS ProgressiveBet, SUM(ISNULL(tb.ProgressiveWin, 0)) AS ProgressiveWin
 			FROM dbo.BonusInfo b WITH (NOLOCK)
 				OUTER APPLY (
-					SELECT SUM(tb.WinlostAmount) AS WinlostAmount
+					SELECT SUM(tb.WinlostAmount) AS WinlostAmount, SUM(tb.ProgressiveBet) AS ProgressiveBet, SUM(tb.ProgressiveWin) AS ProgressiveWin
 					FROM #TpBetRecord tb
 					WHERE b.CustId = tb.CustId AND b.BonusId = tb.BonusId
 				) tb
@@ -98,9 +105,9 @@ BEGIN
 		END
 		
 		IF EXISTS (SELECT 1 FROM bodb02.dbo.strSplit(@BonusTypeIds, ',') WHERE val IN ('6', '7'))
-			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, ExchangeDate, BetCount, Amount, GGR)
+			INSERT INTO #BonusInfo (Date, BonusCode, CustId, CurrencyId, ExchangeDate, BetCount, Amount, GGR, ProgressiveBet, ProgressiveWin)
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), BonusCode, CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-				,COUNT(1) AS BetCount, SUM(RedeemAmount) AS Amount, 0 AS GGR
+				,COUNT(1) AS BetCount, SUM(RedeemAmount) AS Amount, 0 AS GGR, 0 AS ProgressiveBet, 0 AS ProgressiveWin
 			FROM dbo.RebateMLog r WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
@@ -168,11 +175,13 @@ BEGIN
 				,SUM(ISNULL(b.Canceled, 0))			AS Canceled
 				,SUM(ISNULL(b.Fulfill, 0))			AS Fulfill
 				,SUM(ISNULL(b.OtherPlatform, 0))	AS OtherPlatform
-				,COUNT(DISTINCT b.CustId)	AS TotalClaimants
-				,SUM(ISNULL(b.Amount, 0))	AS TotalClaimedAmount
-				,SUM(ISNULL(b.GGR, 0))		AS GGR
-				,SUM(ISNULL(d.Amount, 0))	AS TotalDeposit
-				,SUM(ISNULL(w.Amount, 0))	AS TotalWithdrawal
+				,COUNT(DISTINCT b.CustId)			AS TotalClaimants
+				,SUM(ISNULL(b.Amount, 0))			AS TotalClaimedAmount
+				,SUM(ISNULL(b.GGR, 0))				AS GGR
+				,SUM(ISNULL(b.ProgressiveBet, 0))	AS ProgressiveBet
+				,SUM(ISNULL(b.ProgressiveWin, 0))	AS ProgressiveWin
+				,SUM(ISNULL(d.Amount, 0))			AS TotalDeposit
+				,SUM(ISNULL(w.Amount, 0))			AS TotalWithdrawal
 			FROM
 				(
 					SELECT b.CustId, b.BonusCode
@@ -182,6 +191,8 @@ BEGIN
 						,SUM(CASE WHEN b.Status = 5 THEN b.BetCount ELSE 0 END) AS OtherPlatform
 						,SUM(b.Amount) AS Amount
 						,SUM(b.GGR) AS GGR
+						,SUM(b.ProgressiveBet) AS ProgressiveBet
+						,SUM(b.ProgressiveWin) AS ProgressiveWin
 					FROM #BonusInfo b
 					GROUP BY b.CustId, b.BonusCode
 				) b
@@ -200,7 +211,7 @@ BEGIN
 		SELECT CONVERT(DATE, @FromDate) AS Date, p.Description AS BonusName, p.BonusCode, p.PromotionType AS BonusType, p.Status AS BonusStatus
 			,DATEADD(HOUR, @TimeZone, p.StartDate) AS StartDate
 			,DATEADD(HOUR, @TimeZone, p.EndDate) AS EndDate
-			,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.GGR, b.TotalDeposit, b.TotalWithdrawal
+			,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.GGR, b.ProgressiveBet, b.ProgressiveWin, b.TotalDeposit, b.TotalWithdrawal
 		FROM CTE_Bonus b
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
 	END
@@ -213,11 +224,13 @@ BEGIN
 				,SUM(ISNULL(b.Canceled, 0))			AS Canceled
 				,SUM(ISNULL(b.Fulfill, 0))			AS Fulfill
 				,SUM(ISNULL(b.OtherPlatform, 0))	AS OtherPlatform
-				,COUNT(DISTINCT b.CustId)	AS TotalClaimants
-				,SUM(ISNULL(b.Amount, 0))	AS TotalClaimedAmount
-				,SUM(ISNULL(b.GGR, 0))		AS GGR
-				,SUM(ISNULL(d.Amount, 0))	AS TotalDeposit
-				,SUM(ISNULL(w.Amount, 0))	AS TotalWithdrawal
+				,COUNT(DISTINCT b.CustId)			AS TotalClaimants
+				,SUM(ISNULL(b.Amount, 0))			AS TotalClaimedAmount
+				,SUM(ISNULL(b.GGR, 0))				AS GGR
+				,SUM(ISNULL(b.ProgressiveBet, 0))	AS ProgressiveBet
+				,SUM(ISNULL(b.ProgressiveWin, 0))	AS ProgressiveWin
+				,SUM(ISNULL(d.Amount, 0))			AS TotalDeposit
+				,SUM(ISNULL(w.Amount, 0))			AS TotalWithdrawal
 			FROM
 				(
 					SELECT b.Date, b.CustId, b.BonusCode
@@ -227,6 +240,8 @@ BEGIN
 						,SUM(CASE WHEN b.Status = 5 THEN b.BetCount ELSE 0 END) AS OtherPlatform
 						,SUM(b.Amount) AS Amount
 						,SUM(b.GGR) AS GGR
+						,SUM(b.ProgressiveBet) AS ProgressiveBet
+						,SUM(b.ProgressiveWin) AS ProgressiveWin
 					FROM #BonusInfo b
 					GROUP BY b.Date, b.CustId, b.BonusCode
 				) b
@@ -245,7 +260,7 @@ BEGIN
 		SELECT b.Date, p.Description AS BonusName, p.BonusCode, p.PromotionType AS BonusType, p.Status AS BonusStatus
 			,DATEADD(HOUR, @TimeZone, p.StartDate) AS StartDate
 			,DATEADD(HOUR, @TimeZone, p.EndDate) AS EndDate
-			,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.GGR, b.TotalDeposit, b.TotalWithdrawal
+			,b.Running, b.Canceled, b.Fulfill, b.OtherPlatform, b.TotalClaimants, b.TotalClaimedAmount, b.GGR, b.ProgressiveBet, b.ProgressiveWin, b.TotalDeposit, b.TotalWithdrawal
 		FROM CTE_Bonus b
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
 		ORDER BY b.Date, p.Description
@@ -257,12 +272,17 @@ BEGIN
 				,SUM(CASE WHEN Status = 2 THEN BetCount ELSE 0 END) AS Canceled
 				,SUM(CASE WHEN Status = 4 THEN BetCount ELSE 0 END) AS Fulfill
 				,SUM(CASE WHEN Status = 5 THEN BetCount ELSE 0 END) AS OtherPlatform
-				,COUNT(DISTINCT CustId) AS TotalClaimants, SUM(Amount) AS Amount, SUM(GGR) AS GGR
+				,COUNT(DISTINCT CustId) AS TotalClaimants, SUM(Amount) AS Amount, SUM(GGR) AS GGR, SUM(ProgressiveBet) AS ProgressiveBet, SUM(ProgressiveWin) AS ProgressiveWin
 			FROM #BonusInfo
 			GROUP BY BonusCode
 	)
-	SELECT Running, Canceled, Fulfill, OtherPlatform, TotalClaimants, Amount AS TotalClaimedAmount, GGR, TotalDeposit, TotalWithdrawal
-	FROM (SELECT SUM(Running) AS Running, SUM(Canceled) AS Canceled, SUM(Fulfill) AS Fulfill, SUM(OtherPlatform) AS OtherPlatform, SUM(TotalClaimants) AS TotalClaimants, SUM(GGR) AS GGR, SUM(Amount) AS Amount FROM CTE_Bonus) b
+	SELECT Running, Canceled, Fulfill, OtherPlatform, TotalClaimants, Amount AS TotalClaimedAmount, GGR, ProgressiveBet, ProgressiveWin, TotalDeposit, TotalWithdrawal
+	FROM (
+		SELECT
+			SUM(Running) AS Running, SUM(Canceled) AS Canceled, SUM(Fulfill) AS Fulfill, SUM(OtherPlatform) AS OtherPlatform
+			, SUM(TotalClaimants) AS TotalClaimants, SUM(GGR) AS GGR, SUM(ProgressiveBet) AS ProgressiveBet, SUM(ProgressiveWin) AS ProgressiveWin, SUM(Amount) AS Amount
+		FROM CTE_Bonus
+	) b
 		OUTER APPLY (SELECT SUM(Amount) AS TotalDeposit FROM #DepositInfo) d
 		OUTER APPLY (SELECT SUM(Amount) AS TotalWithdrawal FROM #WithdrawalInfo) w
 
