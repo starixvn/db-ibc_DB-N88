@@ -6,6 +6,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Main_ExportExcel]
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
 	,@CurrencyIds VARCHAR(MAX)
+	,@FromLastXDays		DATE = NULL
 AS
 
 /*
@@ -24,6 +25,7 @@ AS
 		- 20210301@Percy: Change date range on MTD column + translate of Credit [RedmineID: #150398]
 		- 20210401@Percy: Add new group Signup Url [RedmineID: #150876]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
+		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
 */
 
 BEGIN
@@ -90,6 +92,15 @@ BEGIN
 
 		SELECT @FromDateMTD = DATEADD(MONTH, DATEDIFF(MONTH, 0, DATEADD(HOUR, 4 + @TimeZone, GETDATE() - 1)), 0)
 		SELECT @ToDateMTD = CONVERT(DATE, DATEADD(HOUR, 4 + @TimeZone, GETDATE() - 1))
+
+		IF (@FromLastXDays IS NOT NULL)
+		BEGIN
+			IF (@FromLastXDays > @FromDateMTD) --gmt+8 comparation)
+				SET @FromDateMTD = @FromLastXDays
+
+			IF (@FromLastXDays > @OfficialLaunchDate) --gmt+8 comparation)
+				SET @OfficialLaunchDate = @FromLastXDays
+		END
 
 		-- Data on GMT+0 --> convert timezone
 		SELECT  @FromDateTimeGMT		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))

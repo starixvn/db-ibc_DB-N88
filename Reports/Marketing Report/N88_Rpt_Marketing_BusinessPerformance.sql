@@ -8,6 +8,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_BusinessPerformance]
 	,@CurrencyIds		VARCHAR(MAX)
 	,@DisplayCurrency	VARCHAR(3)
 	,@TimeZone			SMALLINT = 8
+	,@FromLastXDays		DATE = NULL
 AS
 
 /*
@@ -24,6 +25,11 @@ AS
 		- 20201223@Sol: Add newly active registered users info - [RedmineID: #147542]
 		- 20210113@Percy: Add Rebate & Cashback [RedmineID: #148616]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
+		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
+
+	Param explaination:
+		- @FromLastXDays:
+			+ NULL: no limit
 */
 
 BEGIN
@@ -33,6 +39,7 @@ BEGIN
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
+			,@FromLastXDaysGMT DATETIME
 
 	DECLARE @TotalUsers INT
 			,@TotalDepositUsers INT
@@ -59,12 +66,23 @@ BEGIN
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 				,@CompareFromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareFromDate))
 				,@CompareToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareToDate))
+				,@FromLastXDaysGMT = CASE WHEN @FromLastXDays IS NULL THEN NULL ELSE DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromLastXDays)) END
 		
 		-- General Info
 		BEGIN
 			SELECT
-				@TotalUsers = COUNT(1)
-				,@TotalDepositUsers = COUNT(CASE WHEN ActStatus = 2 THEN 1 ELSE NULL END)
+				@TotalUsers = COUNT(CASE 
+										WHEN @FromLastXDaysGMT IS NULL THEN 1
+										WHEN c.RegTime >= @FromLastXDaysGMT THEN 1
+										ELSE NULL
+									END)
+				,@TotalDepositUsers = COUNT
+										(CASE 
+											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
+											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
+											ELSE NULL 
+										END
+										)
 				,@UptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
 				,@CompareUptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
 				,@NewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
@@ -74,7 +92,12 @@ BEGIN
 				AND IsTest = 0
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
-			SELECT @TotalDepositUsers = @TotalDepositUsers - COUNT(CASE WHEN c.ActStatus = 2 THEN 1 ELSE NULL END) + COUNT(d.CustId)
+			SELECT @TotalDepositUsers = @TotalDepositUsers - COUNT
+										(CASE 
+											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
+											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
+											ELSE NULL 
+										END) + COUNT(d.CustId)
 			FROM dbo.Customer c WITH (NOLOCK)
 				LEFT JOIN dbo.DepositInfo d WITH (NOLOCK) ON c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
 			WHERE c.RegTime < '2020-08-15'
@@ -88,8 +111,31 @@ BEGIN
 				AND c.IsTest = 0
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				AND (
-					EXISTS (SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK) WHERE c.CustId = r.CustId)
-					OR EXISTS (SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) WHERE c.CustId = t.CustId)
+						EXISTS 
+						(
+							SELECT 1 
+							FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
+							WHERE 
+								c.CustId = r.CustId
+								AND r.SiteId = @SiteId
+								AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+								AND 1 = CASE 
+										WHEN @FromLastXDaysGMT IS NULL THEN 1
+										WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
+									END
+						)
+						OR 
+						EXISTS 
+						(
+							SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) 
+							WHERE 
+								c.CustId = t.CustId
+								AND t.SiteId = @SiteId
+								AND 1 = CASE 
+											WHEN @FromLastXDaysGMT IS NULL THEN 1
+											WHEN t.CreateTime >= @FromLastXDaysGMT THEN 1
+										END
+						)
 				)
 
 		END
