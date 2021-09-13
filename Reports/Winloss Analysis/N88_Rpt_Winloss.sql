@@ -46,6 +46,7 @@ AS
 			+ add closing balance to the report
 		- 20210616@Sol: MPA - Hotfix - Incorrect closing balance - [RedmineID: #157073]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
+		- 20210907@Percy: Enhance code get CustClosingBalance [RedmineID: #161291]
 
 	Param's Explanation:
 		@SortbyId:
@@ -411,23 +412,13 @@ BEGIN
 		;WITH rs AS
 		(
 			SELECT 
-				MAX(cb.TIME) mTime, 
-				MAX(CONVERT(DATE, DATEADD(HOUR,-4, cb.TIME))) AS exTime,
+				CONVERT(DATETIME, MAX(cb.TIME)) AS mTime, 
+				CONVERT(DATE, MAX(CONVERT(DATE, DATEADD(HOUR,-4, cb.TIME)))) AS exTime,
 				cb.CustId, cb.SiteId, c.CurrencyId
 			FROM dbo.CustClosingBalance cb
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON cb.CustId = c.CustId
+				INNER JOIN (SELECT DISTINCT CustId, CurrencyId FROM #__N88_SumWinloss) c ON cb.CustId = c.CustId
 			WHERE 
 				cb.Time >= @FromDateTimeGMT0 AND cb.Time < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), cb.SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND (
-						ISNULL(@UserName,'') = ''
-						OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-											WHEN @UserNameFilterId = 2 THEN c.TpUserName
-											WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-										END
-					)
 			GROUP BY cb.CustId, cb.SiteId, c.CurrencyId
 		)
 		INSERT INTO #__ClosingBalance(CustId, ClosingBalance, BasedClosingBalance)
