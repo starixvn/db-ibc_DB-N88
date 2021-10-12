@@ -26,6 +26,7 @@ AS
 		- 20210401@Percy: Add new group Signup Url [RedmineID: #150876]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
+		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 */
 
 BEGIN
@@ -459,14 +460,14 @@ BEGIN
 		SELECT Name, NameVN, DateRange, MonthToDate, AllRange, DataType FROM @tempData
 
 		-- Registration Details
-		DECLARE @DefaultSignupUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
+		DECLARE @DefaultSignupUrl VARCHAR(200), @APPSignupUrl VARCHAR(200), @MainUrl VARCHAR(200)
 		DECLARE @CreditAgentName VARCHAR(30) = ''
 		DECLARE @MainUrls TABLE (Url VARCHAR(200))
 		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
 
 		IF @SiteId = 1
 		BEGIN
-			SELECT @APPSignupUrl = 'app.nova88.net'
+			SELECT @APPSignupUrl = 'app.n17881788.com', @MainUrl = 'Nova88.net'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
@@ -478,10 +479,19 @@ BEGIN
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
-			SELECT @CreditAgentName = 'Goal123Ref01', @APPSignupUrl = 'app.goal123.com'
+			SELECT @CreditAgentName = 'Goal123Ref01', @APPSignupUrl = 'app.goal123.com', @MainUrl = 'Goal123.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.goal123.com'), ('m.goal123.com')
+					,('m.sutbong123.com') 
+					,('mrelease.goal123.com')
+					,('release.goal123.com')     
+					,('www.sutbong123.com')     
+					,('www.duongdenkhungthanh.com')
+					,('m.duongdenkhungthanh.com')
+					,('https://www.duongdenkhungthanh.com')
+					,('https://m.duongdenkhungthanh.com')
+
 
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
@@ -490,10 +500,18 @@ BEGIN
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
-			SELECT @CreditAgentName = 'BwingRef01', @APPSignupUrl = 'app.bwing.com', @DefaultSignupUrl = 'www.bwing.com'
+			SELECT @CreditAgentName = 'BwingRef01', @APPSignupUrl = 'app.bwing.com', @DefaultSignupUrl = 'www.bwing.com', @MainUrl = 'Bwing.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.bwing.com'), ('m.bwing.com')
+					,('release.bwing.com')
+					,('mrelease.bwing.com')
+					,('www.bwinghotevent.club')
+					,('m.bwinghotevent.club')    
+					,('www.bomtanhoitu.live')
+					,('m.bomtanhoitu.live')
+					,('https://www.bwinghotevent.club')
+					,('https://www.bomtanhoitu.live')
 
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
@@ -510,7 +528,7 @@ BEGIN
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END) AS NVARCHAR(200)) AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
@@ -537,7 +555,7 @@ BEGIN
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
 					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
 					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-					WHEN c.RegTime < '2020-08-20' AND cg.CustId IS NULL THEN @DefaultSignupUrl
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
 					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
 					ELSE cg.SignupUrl END
 				,CASE

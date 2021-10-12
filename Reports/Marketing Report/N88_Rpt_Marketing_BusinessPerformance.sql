@@ -26,6 +26,7 @@ AS
 		- 20210113@Percy: Add Rebate & Cashback [RedmineID: #148616]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
+		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -83,7 +84,11 @@ BEGIN
 											ELSE NULL 
 										END
 										)
-				,@UptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
+				,@UptoTotalUsers = COUNT(CASE 
+											WHEN @FromLastXDaysGMT IS NULL AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 
+											WHEN @FromLastXDaysGMT IS NOT NULL AND (c.RegTime >= @FromLastXDaysGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)) THEN 1 
+											ELSE NULL 
+										END)
 				,@CompareUptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
 				,@NewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
 				,@CompareNewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @CompareFromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
