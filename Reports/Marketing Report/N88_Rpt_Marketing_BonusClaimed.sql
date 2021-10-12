@@ -1,4 +1,7 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+USE bodb_N88
+GO
+
 ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_BonusClaimed]
 	@LicenseeId			INT
 	,@FromDate			DATE
@@ -23,18 +26,19 @@ AS
 			1. Add Bonus Name column
 			2. Breakdown by original currency
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
+		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 */
 
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT, @tmpFromDate DATE, @tmpToDate DATE
+	DECLARE @SiteId INT, @tmpFromDate DATE, @tmpToDate DATE, @BonusTypeName VARCHAR(100)
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
-			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
-	CREATE TABLE #BonusInfo (BonusCode VARCHAR(50), Currency INT, BonusClaimeds INT, BonusAmount MONEY, BasedBonusAmount MONEY, IsCompared BIT)
+	CREATE TABLE #BonusInfo (BonusCode VARCHAR(50), EventId INT, Currency INT, BonusUsers INT, BonusAmount MONEY, BasedBonusAmount MONEY, IsCompared BIT)
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	DECLARE @BonusType TABLE (DBTypeId SMALLINT, BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), DataSource VARCHAR(100))
 
 	BEGIN
 		SELECT @SiteId = SiteId
@@ -42,15 +46,25 @@ BEGIN
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
 		WHERE l.LicenseeId = @LicenseeId
 
-		-- Data on GMT+0 --> convert timezone
-		SELECT  @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
-				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
-				,@CompareFromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareFromDate))
-				,@CompareToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareToDate))
-
+		INSERT INTO @BonusType (DBTypeId, BonusTypeId, BonusTypeName, DataSource)
+		SELECT DBTypeId, BonusTypeId, BonusTypeName, DataSource
+		FROM dbo.N88_f_BonusType()
+		
 		-- Get data
+		DECLARE @i TINYINT = 1, @IsCompared BIT
+		WHILE @i <= 2
 		BEGIN
-			SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
+			-- Data on GMT+0 --> convert timezone
+			IF @i = 1
+				SELECT @IsCompared = 0
+					,@tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
+					,@FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
+					,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
+			ELSE
+				SELECT @IsCompared = 1
+					,@tmpFromDate = DATEADD(DAY, -1, @CompareFromDate), @tmpToDate = DATEADD(DAY, 1, @CompareToDate)
+					,@FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareFromDate))
+					,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @CompareToDate))
 			
 			DELETE #Exchange
 			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
@@ -58,11 +72,12 @@ BEGIN
 			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
 			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
-			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
+			-- BonusInfo
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusUsers, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT b.BonusCode, b.CurrencyId, COUNT(DISTINCT b.CustId) AS BonusUsers, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
 			FROM (
-				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
-					SUM(b.BonusAmount / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
+				SELECT b.BonusCode, b.CustId, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate
+					,SUM(b.BonusAmount / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS BonusAmount
 				FROM dbo.BonusInfo b WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -70,16 +85,17 @@ BEGIN
 					AND b.SiteId = @SiteId
 					AND c.IsTest = 0
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-				GROUP BY b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+				GROUP BY b.BonusCode, b.CustId, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime))
 			) b
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY b.BonusCode, b.CurrencyId
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
-			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, 0 AS IsCompared
+			-- RebateMLog
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusUsers, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT r.BonusCode, r.CurrencyId, COUNT(DISTINCT r.CustId) AS BonusUsers, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
 			FROM (
-				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
-				SUM(r.RedeemAmount / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
+				SELECT r.BonusCode, r.CustId, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate
+					,SUM(r.RedeemAmount / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
 				FROM dbo.RebateMLog r WITH (NOLOCK)
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -87,55 +103,78 @@ BEGIN
 					AND r.SiteId = @SiteId
 					AND c.IsTest = 0
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-				GROUP BY r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
+				GROUP BY r.BonusCode, r.CustId, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
 			) r
 				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY r.BonusCode, r.CurrencyId
-		END
 
-		-- Get data for compare
-		BEGIN
-			SELECT @tmpFromDate = DATEADD(DAY, -1, @CompareFromDate), @tmpToDate = DATEADD(DAY, 1, @CompareToDate)
-			
-			DELETE #Exchange
-			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate
-			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
-			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
-
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
-			SELECT b.BonusCode, b.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
+			-- DrawLog
+			INSERT INTO #BonusInfo (EventId, Currency, BonusUsers, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT d.EventId, d.CurrencyId, COUNT(DISTINCT d.CustId) AS BonusUsers, SUM(d.BonusAmount) AS BonusAmount, SUM(d.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
 			FROM (
-				SELECT b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
-				SUM(b.BonusAmount  / CASE WHEN b.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
-				FROM dbo.BonusInfo b WITH (NOLOCK)
-					INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND b.CreateTime >= @CompareFromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-					AND b.SiteId = @SiteId
+				SELECT d.EventId, d.CustId, d.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, d.DrawTime)) AS ExchangeDate
+					,SUM(d.Amount / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
+				FROM dbo.DrawLog d WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
+				WHERE d.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND d.DrawTime >= @FromDateTimeGMT AND d.DrawTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND d.SiteId = @SiteId
 					AND c.IsTest = 0
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-				GROUP BY b.BonusCode, b.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-			) b
-				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY b.BonusCode, b.CurrencyId
+				GROUP BY d.EventId, d.CustId, d.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, d.DrawTime))
+			) d
+				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY d.EventId, d.CurrencyId
 
-			INSERT INTO #BonusInfo (BonusCode, Currency, BonusClaimeds, BonusAmount, BasedBonusAmount, IsCompared)
-			SELECT r.BonusCode, r.CurrencyId, SUM(BonusClaimeds) AS BonusClaimeds, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, 1 AS IsCompared
+			-- AdjustmentInfo
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'AdjustmentInfo'
+
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusUsers, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT @BonusTypeName, a.CurrencyId, COUNT(DISTINCT a.CustId) AS BonusUsers, SUM(a.BonusAmount) AS BonusAmount, SUM(a.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
 			FROM (
-				SELECT r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime)) AS ExchangeDate, COUNT(1) AS BonusClaimeds, 
-				SUM(r.RedeemAmount  / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
-				FROM dbo.RebateMLog r WITH (NOLOCK)
-					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
-				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND r.CreateTime >= @CompareFromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
-					AND r.SiteId = @SiteId
+				SELECT a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime)) AS ExchangeDate
+					,SUM(a.Amount * CASE
+									WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
+									WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+									ELSE 0 END
+									/ CASE WHEN a.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
+				FROM dbo.AdjustmentInfo a WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
+				WHERE a.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND a.CreateTime >= @FromDateTimeGMT AND a.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND a.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND a.Status = 2 -- Approved
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-				GROUP BY r.BonusCode, r.CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, r.CreateTime))
-			) r
-				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY r.BonusCode, r.CurrencyId
+				GROUP BY a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime))
+			) a
+				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY a.CurrencyId
+
+			-- VipUpgradeReview
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'VipUpgradeReview'
+
+			INSERT INTO #BonusInfo (BonusCode, Currency, BonusUsers, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT @BonusTypeName, v.CurrencyId, COUNT(DISTINCT v.CustId) AS BonusUsers, SUM(v.BonusAmount) AS BonusAmount, SUM(v.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
+			FROM (
+				SELECT v.CurrencyId, v.CustId, CONVERT(DATE, DATEADD(HOUR, -4, v.SettleTime)) AS ExchangeDate
+					,SUM(v.UpgradeAmount / CASE WHEN v.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
+				FROM dbo.VipUpgradeReview v WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON v.CustId = c.CustId
+				WHERE v.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND v.SettleTime >= @FromDateTimeGMT AND v.SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND v.SiteId = @SiteId
+					AND c.IsTest = 0
+					AND v.Status = 4 -- Settled
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+				GROUP BY v.CurrencyId, v.CustId, CONVERT(DATE, DATEADD(HOUR, -4, v.SettleTime))
+			) v
+				INNER JOIN #Exchange e ON v.CurrencyId = e.ExchangeId AND v.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY v.CurrencyId
+
+			SELECT @i = @i + 1
 		END
 
 		-- Summary by Currency
@@ -148,9 +187,11 @@ BEGIN
 		GROUP BY Currency
 
 		-- Detail by Bonus Code, Currency
-		SELECT b.BonusCode, b.Currency, p.Description AS BonusName, b.BonusClaimeds, b.BonusAmount, b.BasedBonusAmount
+		SELECT ISNULL(e.EventName, b.BonusCode) AS BonusCode, b.Currency, ISNULL(e.EventName, p.Description) AS BonusName
+			,b.BonusUsers, b.BonusAmount, b.BasedBonusAmount
 		FROM #BonusInfo b
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
+			LEFT JOIN dbo.EventDraw e WITH (NOLOCK) ON b.EventId = e.EventId AND e.SiteId = @SiteId
 		WHERE b.IsCompared = 0
 		ORDER BY CASE WHEN b.BonusCode IS NULL THEN 1 ELSE 0 END, b.BonusCode
 
