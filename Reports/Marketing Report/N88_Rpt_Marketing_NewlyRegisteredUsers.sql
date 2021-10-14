@@ -24,6 +24,7 @@ AS
 			1. Add Total Total Deposit Amount, Bonus Name columns
 			2. Add new group Nova88.com for SigupUrl
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
+		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 */
 
 BEGIN
@@ -133,7 +134,7 @@ BEGIN
 		
 		IF @SiteId = 1
 		BEGIN
-			SELECT @MainUrl = 'Nova88.net', @APPSignupUrl = 'app.nova88.net'
+			SELECT @MainUrl = 'Nova88.net', @APPSignupUrl = 'app.n17881788.com'
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
@@ -148,6 +149,14 @@ BEGIN
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.goal123.com'), ('m.goal123.com')
+					,('m.sutbong123.com') 
+					,('mrelease.goal123.com')
+					,('release.goal123.com')     
+					,('www.sutbong123.com')     
+					,('www.duongdenkhungthanh.com')
+					,('m.duongdenkhungthanh.com')
+					,('https://www.duongdenkhungthanh.com')
+					,('https://m.duongdenkhungthanh.com')
 			
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
@@ -159,6 +168,14 @@ BEGIN
 
 			INSERT INTO @MainUrls (Url)
 			VALUES ('www.bwing.com'), ('m.bwing.com')
+					,('release.bwing.com')
+					,('mrelease.bwing.com')
+					,('www.bwinghotevent.club')
+					,('m.bwinghotevent.club')    
+					,('www.bomtanhoitu.live')
+					,('m.bomtanhoitu.live')
+					,('https://www.bwinghotevent.club')
+					,('https://www.bomtanhoitu.live')
 			
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
