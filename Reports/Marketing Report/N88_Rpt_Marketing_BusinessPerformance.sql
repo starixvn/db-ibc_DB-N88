@@ -102,7 +102,13 @@ BEGIN
 											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
 											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
 											ELSE NULL 
-										END) + COUNT(d.CustId)
+										END) 
+										+ COUNT(CASE 
+													WHEN @FromLastXDaysGMT IS NULL THEN d.CustId
+													WHEN c.RegTime >= @FromLastXDaysGMT THEN d.CustId
+													ELSE NULL
+												END
+												)
 			FROM dbo.Customer c WITH (NOLOCK)
 				LEFT JOIN dbo.DepositInfo d WITH (NOLOCK) ON c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
 			WHERE c.RegTime < '2020-08-15'

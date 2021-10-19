@@ -452,8 +452,14 @@ BEGIN
 			,('Total FTD amount'			, N'Tổng tiền nạp lần đầu'		, @FirstDepositAmount	, @MTD_FirstDepositAmount	, @Total_FirstDepositAmount	, 2)
 			,('Total withdrawal amount'		, N'Tổng tiền rút'				, @WithdrawalAmount		, @MTD_WithdrawalAmount		, @Total_WithdrawalAmount	, 2)
 
-			,('CR - Churn Rate'					, N'Tỉ lệ người rời bỏ chơi'	, @CR, @MTD_CR, 0, 3)
+		---show CR/RR when user is not limited by last x day
+		IF (@FromLastXDays IS NULL)
+		BEGIN
+			INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, AllRange, DataType)
+			VALUES
+			('CR - Churn Rate'					, N'Tỉ lệ người rời bỏ chơi'	, @CR, @MTD_CR, 0, 3)
 			,('RR - Retention Rate'				, N'Tỉ lệ giữ chân người chơi'	, @RR, @MTD_RR, 0, 3)
+		END
 
 		INSERT INTO @tempData (Name) VALUES (NULL) -- support web a line in excel
 
@@ -521,7 +527,8 @@ BEGIN
 
 		SELECT ISNULL(SignupUrl, 'None') AS SignupUrl
 			,ISNULL(SignupUrl, N'Không xác định') AS SignupUrlVN
-			,SignupUsers, MTD_SignupUsers, Total_SignupUsers, CONVERT(TINYINT, 1) AS DataType -- int
+			,SignupUsers, MTD_SignupUsers 
+			,CONVERT(TINYINT, 1) AS DataType -- int
 		FROM (
 			SELECT
 				CAST((CASE
@@ -533,7 +540,7 @@ BEGIN
 					ELSE cg.SignupUrl END) AS NVARCHAR(200)) AS SignupUrl
 				,COUNT(CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END) AS SignupUsers
 				,COUNT(CASE WHEN c.RegTime >= @FromDateMTDGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateMTDGMT) THEN 1 ELSE NULL END) AS MTD_SignupUsers
-				,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
+				--,COUNT(CASE WHEN c.RegTime >= @OfficialLaunchDateGMT THEN 1 ELSE NULL END) AS Total_SignupUsers
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
 					WHEN ag.UserName = @CreditAgentName THEN 4
@@ -567,6 +574,7 @@ BEGIN
 					WHEN cg.CustId IS NOT NULL THEN 5
 					ELSE 6 END
 		) r
+		WHERE r.SignupUsers > 0 OR r.MTD_SignupUsers > 0
 		ORDER BY r.OrderCol, r.SignupUrl
 	END
 
