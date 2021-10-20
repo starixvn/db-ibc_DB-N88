@@ -80,7 +80,7 @@ BEGIN
 				,@TotalDepositUsers = COUNT
 										(CASE 
 											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
-											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
+											WHEN ActStatus = 2 AND c.FirstDepositDate >= @FromLastXDaysGMT THEN 1
 											ELSE NULL 
 										END
 										)
@@ -100,12 +100,12 @@ BEGIN
 			SELECT @TotalDepositUsers = @TotalDepositUsers - COUNT
 										(CASE 
 											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
-											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
+											WHEN ActStatus = 2 AND c.FirstDepositDate >= @FromLastXDaysGMT THEN 1
 											ELSE NULL 
 										END) 
 										+ COUNT(CASE 
 													WHEN @FromLastXDaysGMT IS NULL THEN d.CustId
-													WHEN c.RegTime >= @FromLastXDaysGMT THEN d.CustId
+													WHEN d.CreateTime >= @FromLastXDaysGMT THEN d.CustId
 													ELSE NULL
 												END
 												)
