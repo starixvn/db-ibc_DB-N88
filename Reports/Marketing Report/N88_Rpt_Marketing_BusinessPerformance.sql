@@ -26,6 +26,7 @@ AS
 		- 20210113@Percy: Add Rebate & Cashback [RedmineID: #148616]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
+		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -78,31 +79,22 @@ BEGIN
 									END)
 				,@TotalDepositUsers = COUNT
 										(CASE 
-											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
-											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
+											WHEN c.FirstDepositDate IS NOT NULL AND @FromLastXDaysGMT IS NULL THEN 1
+											WHEN c.FirstDepositDate IS NOT NULL AND c.FirstDepositDate >= @FromLastXDaysGMT THEN 1
 											ELSE NULL 
 										END
 										)
-				,@UptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
+				,@UptoTotalUsers = COUNT(CASE 
+											WHEN @FromLastXDaysGMT IS NULL AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 
+											WHEN @FromLastXDaysGMT IS NOT NULL AND (c.RegTime >= @FromLastXDaysGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)) THEN 1 
+											ELSE NULL 
+										END)
 				,@CompareUptoTotalUsers = COUNT(CASE WHEN RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
 				,@NewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE NULL END)
 				,@CompareNewlyRegisterUsers = COUNT(CASE WHEN RegTime >= @CompareFromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT) THEN 1 ELSE NULL END)
 			FROM dbo.Customer c WITH (NOLOCK)
 			WHERE SiteId = @SiteId
 				AND IsTest = 0
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-
-			SELECT @TotalDepositUsers = @TotalDepositUsers - COUNT
-										(CASE 
-											WHEN ActStatus = 2 AND @FromLastXDaysGMT IS NULL THEN 1
-											WHEN ActStatus = 2 AND c.RegTime >= @FromLastXDaysGMT THEN 1
-											ELSE NULL 
-										END) + COUNT(d.CustId)
-			FROM dbo.Customer c WITH (NOLOCK)
-				LEFT JOIN dbo.DepositInfo d WITH (NOLOCK) ON c.CustId = d.CustId AND d.FirstDeposit = 1 AND d.Status = 3
-			WHERE c.RegTime < '2020-08-15'
-				AND c.SiteId = @SiteId
-				AND c.IsTest = 0
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 			SELECT @TotalActiveUsers = COUNT(1)

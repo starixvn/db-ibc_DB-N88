@@ -27,6 +27,7 @@ AS
 			1. Add Total Currency, SigupUrl, AFF Code, Total Deposit Amount columns
 			2. Add new group Nova88.com for SigupUrl
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
+		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 
 	Param's Explanation:
 		@SortbyId:
@@ -77,7 +78,7 @@ BEGIN
 
 		IF @SiteId = 1
 		BEGIN
-			SELECT @APPSignupUrl = 'app.nova88.net'
+			SELECT @APPSignupUrl = 'app.n17881788.com'
 
 			INSERT INTO #Affiliate (CustId, AffCode)
 			SELECT mi.CustId, ai.AffCode
