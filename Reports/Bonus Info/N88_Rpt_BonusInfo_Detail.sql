@@ -55,7 +55,7 @@ BEGIN
 
 	BEGIN
 		IF @BonusTypeId <> 0
-			SELECT @DataSource = DataSource FROM dbo.N88_f_BonusType () WHERE BonusTypeId = @BonusTypeId
+			SELECT @DataSource = DataSource FROM dbo.N88_f_BonusType() WHERE BonusTypeId = @BonusTypeId
 
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
@@ -95,9 +95,8 @@ BEGIN
 		-- RebateMLog
 		IF @BonusTypeId = 0 OR @DataSource = 'RebateMLog'
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount, PercentagedCompletion)
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
 			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), RedeemAmount
-				,CASE WHEN BonusCode = 'VipRebate' THEN 1 ELSE 0 END
 			FROM dbo.RebateMLog WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
