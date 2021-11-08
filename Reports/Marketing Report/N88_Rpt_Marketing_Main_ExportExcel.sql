@@ -286,9 +286,9 @@ BEGIN
 		-- Bonus data
 		CREATE TABLE #BonusUsers (CustId INT, BonusTypeId SMALLINT, BonusClaimed MONEY, IsDateRange TINYINT, IsMTD TINYINT)
 		
-		CREATE TABLE #BonusType (DBTypeId SMALLINT, BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), DataSource VARCHAR(100))
-		INSERT INTO #BonusType (DBTypeId, BonusTypeId, BonusTypeName, DataSource)
-		SELECT DBTypeId, BonusTypeId, BonusTypeName, DataSource
+		CREATE TABLE #BonusType (DBTypeId SMALLINT, BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), DataSource VARCHAR(100), OrderId SMALLINT)
+		INSERT INTO #BonusType (DBTypeId, BonusTypeId, BonusTypeName, DataSource, OrderId)
+		SELECT DBTypeId, BonusTypeId, BonusTypeName, DataSource, OrderId
 		FROM dbo.N88_f_BonusType()
 
 		DECLARE @BonusTypeId SMALLINT, @i TINYINT = 1, @IsDateRange TINYINT, @IsMTD TINYINT -- tinyint for SUM
@@ -485,11 +485,12 @@ BEGIN
 				WHERE b.CustId = c.CustId
 				GROUP BY b.BonusTypeId
 			) b
-			LEFT JOIN #BonusType bt ON b.BonusTypeId = bt.BonusTypeId
+			INNER JOIN (SELECT DISTINCT BonusTypeId, BonusTypeName, OrderId FROM #BonusType) bt ON b.BonusTypeId = bt.BonusTypeId
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-		GROUP BY bt.BonusTypeName
+		GROUP BY bt.BonusTypeName, bt.OrderId
+		ORDER BY bt.OrderId
 
 		DROP TABLE #BonusUsers
 		DROP TABLE #DepositUsers

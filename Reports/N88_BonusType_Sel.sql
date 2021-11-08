@@ -17,8 +17,8 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	SELECT DISTINCT BonusTypeId, BonusTypeName
+	SELECT DISTINCT BonusTypeId, BonusTypeName, OrderId
 	FROM dbo.N88_f_BonusType()
-	ORDER BY BonusTypeId
+	ORDER BY OrderId
 END
 GO
