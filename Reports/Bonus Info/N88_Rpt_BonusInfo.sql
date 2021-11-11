@@ -345,12 +345,12 @@ BEGIN
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
 														AND (p.Description LIKE '%' + @BonusName + '%' OR p.BonusCode LIKE '%' + @BonusName + '%')
-														AND ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), p.Status) + ',%'
 														AND b.EventId IS NULL
 			LEFT JOIN dbo.EventDraw e WITH (NOLOCK) ON b.EventId = e.EventId AND e.SiteId = @SiteId
 														AND e.EventName LIKE '%' + @BonusName + '%'
 		WHERE c.IsTest = 0
 			AND (@BonusName = '' OR b.BonusCode LIKE '%' + @BonusName + '%' OR p.BonusCode IS NOT NULL OR e.EventId IS NOT NULL)
+			AND (p.Status IS NULL OR ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), p.Status) + ',%')
 		GROUP BY b.CustId
 			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE b.BonusCode END
 			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE p.Description END

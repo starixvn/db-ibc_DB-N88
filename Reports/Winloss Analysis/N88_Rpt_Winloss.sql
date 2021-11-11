@@ -380,7 +380,7 @@ BEGIN
 
 		-- Bonus: AdjustmentInfo
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate), 1
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
 		FROM (
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
@@ -404,17 +404,17 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
 		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
 		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime)) AS ExchangeDate
 				,SUM(UpgradeAmount) AS Amount
 			FROM dbo.VIPUpgradeReview WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND SettleTime >= @FromDateTimeGMT0 AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 4 -- Settled
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
 		) b
 			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY b.rptDate, b.CustId, b.CurrencyId
