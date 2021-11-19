@@ -47,6 +47,7 @@ AS
 		- 20210616@Sol: MPA - Hotfix - Incorrect closing balance - [RedmineID: #157073]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20210907@Percy: Enhance code get CustClosingBalance [RedmineID: #161291]
+		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 
 	Param's Explanation:
 		@SortbyId:
@@ -66,6 +67,7 @@ AS
 			. 14 = Total Deposit Amount
 			. 15 = No. Withdrawal
 			. 16 = Total Withdrawal Amount
+			. 17 = Total Bonus Amount
 */
 
 BEGIN
@@ -118,11 +120,13 @@ BEGIN
 		,NumberOfWithdrawal			INT
 		,WithdrawalAmount			MONEY
 		,BasedWithdrawalAmount		MONEY
-		,IsDepositWithrawUser		BIT DEFAULT (0)
+		,BonusAmount				MONEY
+		,BasedBonusAmount			MONEY
+		,IsExtraUser				BIT DEFAULT (0) -- for count player who has placed bet
 	)
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (CustId)
 
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId TINYINT, Rate FLOAT, MultipleBy FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
 
 	--closing balance temp table
@@ -136,8 +140,8 @@ BEGIN
 	---- by winlostdate
 	IF (@FilterBy = 1)
 	BEGIN
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate
+		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
@@ -185,20 +189,11 @@ BEGIN
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
 			GROUP BY
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime))
 				,r.CustId
@@ -217,8 +212,8 @@ BEGIN
 
 		SELECT @MinDate = DATEADD(DAY, -1, @MinDate), @MaxDate = DATEADD(DAY, 1, @MaxDate)
 
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate
+		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
@@ -266,20 +261,11 @@ BEGIN
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
 			GROUP BY
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime))
 				,r.CustId
@@ -293,144 +279,182 @@ BEGIN
 
 	-- Reset Exchange
 	DELETE #__Exchange
-	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-	SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END
+	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+	SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
 	WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 	
-	----deposit/withdraw number/amount
+	-- Deposit/Withdrawal/Bonus
 	BEGIN 
-		--deposit
-		INSERT INTO #__N88_SumWinloss
-		(
-			rptDate, CustId, CurrencyId
-			,NumberOfDeposit	
-			,DepositAmount		
-			,BasedDepositAmount
-			,IsDepositWithrawUser
-		)
-		SELECT d.rptDate, d.CustId, d.CurrencyId, 
-			SUM(d.NumberOfDeposit) NumberOfDeposit, 
-			SUM(d.DepositAmt) DepositAmt, 
-			SUM(d.DepositAmt * e.Rate) AS BasedDepositAmount,
-			1
-		FROM 
-		(
-			SELECT 
-				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
-				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
-				COUNT(d.DepositId) AS NumberOfDeposit,
-				SUM(d.Amount / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmt
-			FROM dbo.DepositInfo d WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) 
-					ON d.CustId = c.CustId
-			WHERE d.WinlostDate BETWEEN @FDate AND @TDate
-				AND d.CreateTime >= @FromDateTimeGMT0 
-				AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND d.SiteId IN 
-								(
-									SELECT SiteId
-									FROM dbo.ServerInfo s WITH (NOLOCK)
-										INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
-									WHERE ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.LicenseeId) + ',%'
-								)
-				AND d.Status = 3
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), c.CustId, c.CurrencyId
-				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
+		-- Deposit: DepositInfo
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfDeposit, DepositAmount, BasedDepositAmount, IsExtraUser)
+		SELECT d.rptDate, d.CustId, d.CurrencyId, SUM(d.BetCount), SUM(d.Amount / e.MultipleBy), SUM(d.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,COUNT(1) AS BetCount, SUM(Amount) AS Amount
+			FROM dbo.DepositInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 3 -- Approved
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) d
-		INNER JOIN #__Exchange e 
-				ON d.CurrencyId = e.ExchangeId
-					AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #__Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY d.rptDate, d.CustId, d.CurrencyId
 		
-		--withdraw
-		INSERT INTO #__N88_SumWinloss
-		(
-			rptDate, CustId, CurrencyId
-			,NumberOfWithdrawal	
-			,WithdrawalAmount	
-			,BasedWithdrawalAmount
-			,IsDepositWithrawUser
-		)
-		SELECT w.rptDate, w.CustId, w.CurrencyId, 
-			SUM(w.NumberOfWithdrawal) NumberOfWithdrawal, 
-			SUM(w.WithdrawalAmount) WithdrawalAmount, 
-			SUM(w.WithdrawalAmount * e.Rate) AS BasedWithdrawalAmount,
-			1
-		FROM 
-		(
-			SELECT 
-				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
-				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate,
-				COUNT(w.WithdrawalId) AS NumberOfWithdrawal,
-				SUM(w.Amount / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
-			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) 
-					ON w.CustId = c.CustId
-			WHERE w.WinlostDate BETWEEN @FDate AND @TDate
-				AND w.CreateTime >= @FromDateTimeGMT0 
-				AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND w.SiteId IN 
-								(
-									SELECT SiteId
-									FROM dbo.ServerInfo s WITH (NOLOCK)
-										INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
-									WHERE ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.LicenseeId) + ',%'
-								)
-				AND w.Status = 6
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), c.CustId, c.CurrencyId
-				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
+		-- Withdrawal: WithdrawalInfo
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfWithdrawal, WithdrawalAmount, BasedWithdrawalAmount, IsExtraUser)
+		SELECT w.rptDate, w.CustId, w.CurrencyId, SUM(w.BetCount), SUM(w.Amount / e.MultipleBy), SUM(w.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,COUNT(1) AS BetCount, SUM(Amount) AS Amount
+			FROM dbo.WithdrawalInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 6 -- Approved
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) w
-		INNER JOIN #__Exchange e 
-				ON w.CurrencyId = e.ExchangeId
-					AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #__Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY w.rptDate, w.CustId, w.CurrencyId
 
+		-- Bonus: BonusInfo
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,SUM(BonusAmount) AS Amount
+			FROM dbo.BonusInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+
+		-- Bonus: RebateMLog
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,SUM(RedeemAmount) AS Amount
+			FROM dbo.RebateMLog WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+
+		-- Bonus: DrawLog
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, DrawTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, DrawTime)) AS ExchangeDate
+				,SUM(Amount) AS Amount
+			FROM dbo.DrawLog WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND DrawTime >= @FromDateTimeGMT0 AND DrawTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, DrawTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, DrawTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+
+		-- Bonus: AdjustmentInfo
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,SUM(Amount * CASE
+								WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
+								WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+								ELSE 0 END) AS Amount
+			FROM dbo.AdjustmentInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 2 -- Approved
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+
+		-- Bonus: VIPUpgradeReview
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime)) AS ExchangeDate
+				,SUM(UpgradeAmount) AS Amount
+			FROM dbo.VIPUpgradeReview WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND SettleTime >= @FromDateTimeGMT0 AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 4 -- Settled
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
 	END
 	----end
 
+	IF @IsIncludedTestData = 0 OR ISNULL(@UserName, '') <> ''
+		DELETE s
+		FROM #__N88_SumWinloss s
+		WHERE NOT EXISTS (
+			SELECT 1 FROM dbo.Customer c WITH (NOLOCK)
+			WHERE c.CustId = s.CustId
+				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+				AND (
+					ISNULL(@UserName, '') = ''
+					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
+										WHEN @UserNameFilterId = 2 THEN c.TpUserName
+										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
+									END
+				)
+		)
+
 	----cal closing balance
 	BEGIN
-		;WITH rs AS
-		(
+		;WITH rs AS (
 			SELECT 
 				CONVERT(DATETIME, MAX(cb.TIME)) AS mTime, 
 				CONVERT(DATE, MAX(CONVERT(DATE, DATEADD(HOUR,-4, cb.TIME)))) AS exTime,
 				cb.CustId, cb.SiteId, c.CurrencyId
 			FROM dbo.CustClosingBalance cb
 				INNER JOIN (SELECT DISTINCT CustId, CurrencyId FROM #__N88_SumWinloss) c ON cb.CustId = c.CustId
-			WHERE 
-				cb.Time >= @FromDateTimeGMT0 AND cb.Time < DATEADD(DAY, 1, @ToDateTimeGMT0)
+			WHERE cb.Time >= @FromDateTimeGMT0 AND cb.Time < DATEADD(DAY, 1, @ToDateTimeGMT0)
 			GROUP BY cb.CustId, cb.SiteId, c.CurrencyId
 		)
-		INSERT INTO #__ClosingBalance(CustId, ClosingBalance, BasedClosingBalance)
-		SELECT cb.CustId, 
-			SUM(cb.Balance / CASE WHEN rs.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ClosingBalance, 
-			SUM((cb.Balance / CASE WHEN rs.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) * e.Rate) AS BasedClosingBalance
+		INSERT INTO #__ClosingBalance (CustId, ClosingBalance, BasedClosingBalance)
+		SELECT cb.CustId, SUM(cb.Balance / e.MultipleBy), SUM(cb.Balance / e.MultipleBy * e.Rate)
 		FROM dbo.CustClosingBalance cb
-			INNER JOIN rs
-				ON cb.Time = rs.mTime AND cb.CustId = rs.CustId AND cb.SiteId = rs.SiteId
-			INNER JOIN #__Exchange e
-				ON rs.CurrencyId = e.ExchangeId AND rs.exTime BETWEEN e.FromDate AND e.ToDate
-		GROUP BY cb.CustId, rs.CurrencyId
+			INNER JOIN rs ON cb.Time = rs.mTime AND cb.CustId = rs.CustId AND cb.SiteId = rs.SiteId
+			INNER JOIN #__Exchange e ON rs.CurrencyId = e.ExchangeId AND rs.exTime BETWEEN e.FromDate AND e.ToDate
+		GROUP BY cb.CustId
 	END
 
 	DROP TABLE #__Exchange
@@ -471,6 +495,8 @@ BEGIN
 		,NumberOfWithdrawal			INT
 		,WithdrawalAmount			MONEY
 		,BasedWithdrawalAmount		MONEY
+		,BonusAmount				MONEY
+		,BasedBonusAmount			MONEY
 		,ClosingBalance				MONEY 
 		,BasedClosingBalance		MONEY
 	)
@@ -510,6 +536,8 @@ BEGIN
 			,NumberOfWithdrawal		
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
+			,BonusAmount
+			,BasedBonusAmount
 		)
 		SELECT 
 			CASE WHEN @GroupBy = 1
@@ -538,13 +566,15 @@ BEGIN
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
-			,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN CustId ELSE NULL END)) AS UniquePlayers
+			,COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN CustId ELSE NULL END)) AS UniquePlayers
 			,SUM(NumberOfDeposit) AS NumberOfDeposit
 			,SUM(DepositAmount) AS DepositAmount
 			,SUM(BasedDepositAmount) AS BasedDepositAmount
 			,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
 			,SUM(WithdrawalAmount) AS WithdrawalAmount
 			,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
+			,SUM(BonusAmount) AS BonusAmount
+			,SUM(BasedBonusAmount) AS BasedBonusAmount
 		FROM #__N88_SumWinloss
 		GROUP BY
 			CASE WHEN @GroupBy = 1
@@ -607,7 +637,7 @@ BEGIN
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
-			,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN CustId ELSE NULL END)) AS UniquePlayers
+			,COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN CustId ELSE NULL END)) AS UniquePlayers
 		FROM #__N88_SumWinloss r
 			INNER JOIN dbo.TpGameType g WITH (NOLOCK) ON r.GameType = g.Type
 		GROUP BY
@@ -649,6 +679,8 @@ BEGIN
 			,NumberOfWithdrawal		
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
+			,BonusAmount
+			,BasedBonusAmount
 		)
 		SELECT 
 			CurrencyId
@@ -674,13 +706,15 @@ BEGIN
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
-			,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN CustId ELSE NULL END)) AS UniquePlayers
+			,COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN CustId ELSE NULL END)) AS UniquePlayers
 			,SUM(NumberOfDeposit) AS NumberOfDeposit
 			,SUM(DepositAmount) AS DepositAmount
 			,SUM(BasedDepositAmount) AS BasedDepositAmount
 			,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
 			,SUM(WithdrawalAmount) AS WithdrawalAmount
 			,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
+			,SUM(BonusAmount) AS BonusAmount
+			,SUM(BasedBonusAmount) AS BasedBonusAmount
 		FROM #__N88_SumWinloss r
 		GROUP BY
 			CurrencyId
@@ -715,6 +749,8 @@ BEGIN
 				,NumberOfWithdrawal = SUM(NumberOfWithdrawal)	
 				,WithdrawalAmount = SUM(WithdrawalAmount)
 				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
+				,BonusAmount = SUM(BonusAmount)
+				,BasedBonusAmount = SUM(BasedBonusAmount)
 			FROM #__N88_SumWinloss s
 			GROUP BY s.CustId
 		)
@@ -753,6 +789,8 @@ BEGIN
 			,NumberOfWithdrawal		
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
+			,BonusAmount
+			,BasedBonusAmount
 			,ClosingBalance
 			,BasedClosingBalance
 		)
@@ -790,6 +828,8 @@ BEGIN
 			,NumberOfWithdrawal		
 			,WithdrawalAmount	
 			,BasedWithdrawalAmount
+			,BonusAmount
+			,BasedBonusAmount
 			,CASE WHEN @TimeZone IN (7, 8) THEN ISNULL(cb.ClosingBalance, 0) ELSE 0 END
 			,CASE WHEN @TimeZone IN (7, 8) THEN ISNULL(cb.BasedClosingBalance, 0) ELSE 0 END
 		FROM CTE_Result r
@@ -836,6 +876,8 @@ BEGIN
 		,NumberOfWithdrawal			INT
 		,WithdrawalAmount			MONEY
 		,BasedWithdrawalAmount		MONEY
+		,BonusAmount				MONEY
+		,BasedBonusAmount			MONEY
 		,ClosingBalance				MONEY 
 		,BasedClosingBalance		MONEY
 	)
@@ -879,6 +921,8 @@ BEGIN
 		,NumberOfWithdrawal
 		,WithdrawalAmount
 		,BasedWithdrawalAmount
+		,BonusAmount
+		,BasedBonusAmount
 		,ClosingBalance
 		,BasedClosingBalance
 	)
@@ -917,6 +961,8 @@ BEGIN
 		,ISNULL(NumberOfWithdrawal, 0)		
 		,ISNULL(WithdrawalAmount, 0)	
 		,ISNULL(BasedWithdrawalAmount, 0)
+		,ISNULL(BonusAmount, 0)
+		,ISNULL(BasedBonusAmount, 0)
 		,ISNULL(ClosingBalance, 0)
 		,ISNULL(BasedClosingBalance, 0)
 	FROM #__tmpResult
@@ -959,7 +1005,9 @@ BEGIN
 					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
 					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
 					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
-					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC) AS RowNumber
+					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC
+					,CASE WHEN @SortbyId = 17 AND @IsSortAsc = 1 THEN BasedBonusAmount END ASC
+					,CASE WHEN @SortbyId = 17 AND @IsSortAsc = 0 THEN BasedBonusAmount END DESC) AS RowNumber
 			FROM (
 				SELECT GroupId
 					,SUM(BasedTurnover) AS BasedTurnover
@@ -976,6 +1024,7 @@ BEGIN
 					,SUM(BasedDepositAmount) AS BasedDepositAmount
 					,SUM(NumberOfWithdrawal) AS NumberOfWithdrawal
 					,SUM(BasedWithdrawalAmount) AS BasedWithdrawalAmount
+					,SUM(BasedBonusAmount) AS BasedBonusAmount
 					,SUM(BasedClosingBalance) AS BasedClosingBalance
 				FROM #__FinalResult
 				GROUP BY GroupId
@@ -1021,6 +1070,8 @@ BEGIN
 		,NumberOfWithdrawal		
 		,WithdrawalAmount	
 		,BasedWithdrawalAmount
+		,BonusAmount
+		,BasedBonusAmount
 		,ClosingBalance
 		,BasedClosingBalance
 	FROM #__FinalResult
@@ -1040,11 +1091,12 @@ BEGIN
 		,CAST(SUM(BasedProgressiveBet) AS MONEY) AS TotalBasedProgressiveBet
 		,SUM(BetCount) AS TotalBetCount
 		,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
-		,COUNT(DISTINCT (CASE WHEN IsDepositWithrawUser = 0 THEN s.CustId ELSE NULL END)) AS TotalUniquePlayers
+		,COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN s.CustId ELSE NULL END)) AS TotalUniquePlayers
 		,ISNULL(SUM(NumberOfDeposit), 0) AS TotalNumberOfDeposit
 		,ISNULL(CAST(SUM(BasedDepositAmount) AS MONEY), 0) AS TotalBasedDepositAmount
 		,ISNULL(SUM(NumberOfWithdrawal), 0) AS TotalNumberOfWithdrawal
 		,ISNULL(CAST(SUM(BasedWithdrawalAmount) AS MONEY), 0) AS TotalBasedWithdrawalAmount
+		,ISNULL(CAST(SUM(BasedBonusAmount) AS MONEY), 0) AS TotalBasedBonusAmount
 		,@TotalBasedClosingBalance AS TotalBasedClosingBalance
 	FROM #__N88_SumWinloss s
 

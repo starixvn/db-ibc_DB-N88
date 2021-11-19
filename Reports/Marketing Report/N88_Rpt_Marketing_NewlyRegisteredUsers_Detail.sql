@@ -28,6 +28,7 @@ AS
 			2. Add new group Nova88.com for SigupUrl
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
+		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 
 	Param's Explanation:
 		@SortbyId:
@@ -45,9 +46,11 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT
+	DECLARE @SiteId INT, @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME, @BonusTypeName VARCHAR(100)
+	DECLARE @FDate DATE, @TDate DATE
+	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
-	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
+	DECLARE @BonusType TABLE (DBTypeId SMALLINT, BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), DataSource VARCHAR(100))
 
 	BEGIN
 		SELECT @SiteId = SiteId
@@ -55,12 +58,13 @@ BEGIN
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
 		WHERE l.LicenseeId = @LicenseeId
 
+		INSERT INTO @BonusType (DBTypeId, BonusTypeId, BonusTypeName, DataSource)
+		SELECT DBTypeId, BonusTypeId, BonusTypeName, DataSource
+		FROM dbo.N88_f_BonusType()
+
 		-- Data on GMT+0 --> convert timezone
 		SELECT  @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
-
-		DECLARE @FDate DATE, @TDate DATE
-		SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 		
 		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
@@ -107,42 +111,101 @@ BEGIN
 			WHERE mi.RegisteredDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
 		END
 
-		CREATE TABLE #BonusInfo (CustId INT, BonusCode VARCHAR(50))
-		INSERT INTO #BonusInfo (CustId, BonusCode)
-		SELECT CustId, BonusCode
-		FROM dbo.BonusInfo b WITH (NOLOCK)
-		WHERE WinlostDate BETWEEN @FDate AND @TDate
-			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND SiteId = @SiteId
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
-		GROUP BY CustId, BonusCode
+		-- Get Bonus data
+		CREATE TABLE #BonusInfo (CustId INT, BonusCode VARCHAR(100))
 
-		INSERT INTO #BonusInfo (CustId, BonusCode)
-		SELECT CustId, BonusCode
-		FROM dbo.RebateMLog r WITH (NOLOCK)
-		WHERE WinlostDate BETWEEN @FDate AND @TDate
-			AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-			AND SiteId = @SiteId
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
-		GROUP BY CustId, BonusCode
-
-		CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY)
-		INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount)
-		SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate)
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, CustId, CurrencyId
-				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
-				,SUM(Amount) AS TotalDepositAmount
-			FROM dbo.DepositInfo d WITH (NOLOCK)
+		BEGIN
+			-- BonusInfo
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT CustId, BonusCode
+			FROM dbo.BonusInfo WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND Status = 3 -- Approved
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), CustId, CurrencyId
-		) d
-			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY d.CustId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			GROUP BY CustId, BonusCode
+
+			-- RebateMLog
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT CustId, BonusCode
+			FROM dbo.RebateMLog WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			GROUP BY CustId, BonusCode
+
+			-- DrawLog
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT d.CustId, e.EventName
+			FROM (
+				SELECT CustId, EventId
+				FROM dbo.DrawLog WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @FDate AND @TDate
+					AND DrawTime >= @FromDateTimeGMT AND DrawTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				GROUP BY CustId, EventId
+			) d
+				INNER JOIN dbo.EventDraw e WITH (NOLOCK) ON d.EventId = e.EventId AND e.SiteId = @SiteId
+			GROUP BY d.CustId, e.EventName
+
+			-- AdjustmentInfo
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'AdjustmentInfo'
+
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT CustId, @BonusTypeName
+			FROM dbo.AdjustmentInfo WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 2 -- Approved
+			GROUP BY CustId
+
+			-- VipUpgradeReview
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'VipUpgradeReview'
+
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT CustId, @BonusTypeName
+			FROM dbo.VipUpgradeReview WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND SettleTime >= @FromDateTimeGMT AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 4 -- Settled
+			GROUP BY CustId
+		END
+
+		-- Deposit
+		BEGIN
+			CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY)
+			INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount)
+			SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate)
+			FROM (
+				SELECT CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, CustId, CurrencyId
+					,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
+					,SUM(Amount) AS TotalDepositAmount
+				FROM dbo.DepositInfo d WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @FDate AND @TDate
+					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND Status = 3 -- Approved
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+				GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), CustId, CurrencyId
+			) d
+				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY d.CustId
+		END
+
+		DELETE b
+		FROM (
+			SELECT CustId, BonusCode, ROW_NUMBER() OVER(PARTITION BY CustId, BonusCode ORDER BY (SELECT NULL)) AS RN
+			FROM #BonusInfo
+		) b
+		WHERE RN > 1
 
 		SELECT @NRows = COUNT(1)
 		FROM dbo.Customer c WITH (NOLOCK)
