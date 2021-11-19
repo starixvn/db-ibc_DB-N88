@@ -48,6 +48,7 @@ AS
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20210907@Percy: Enhance code get CustClosingBalance [RedmineID: #161291]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 
 	Param's Explanation:
 		@SortbyId:
@@ -394,6 +395,28 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 2 -- Approved
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+
+		-- Bonus: LogAdminAdjustWallet
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,SUM(Amount * CASE
+								WHEN Direction = 1 THEN 1 -- 3rd Add
+								WHEN Direction = 2 THEN -1 -- 3rd Minus
+								ELSE 0 END) AS Amount
+			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 0 -- Approved
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) b

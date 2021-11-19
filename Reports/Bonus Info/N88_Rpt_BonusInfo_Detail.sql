@@ -28,6 +28,7 @@ AS
 		- 20200105@Percy: Initialize SP [RedmineID: #146759]
 		- 20210629@Sol: MPA - Apply Currency permission - [RedmineID: #157588]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 
 	Param's Explanation:
 		@SortbyId:
@@ -121,13 +122,13 @@ BEGIN
 		END
 
 		-- AdjustmentInfo
-		IF @DataSource = 'AdjustmentInfo'
+		IF @BonusTypeId = 101 OR @DataSource = 'AdjustmentInfo'
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
 			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime)
 				,Amount * CASE
-							WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
-							WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+							WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+							WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 							ELSE 0 END
 			FROM dbo.AdjustmentInfo WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -135,6 +136,23 @@ BEGIN
 				AND SiteId = @SiteId
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 2 -- Approved
+		END
+
+		-- LogAdminAdjustWallet
+		IF @BonusTypeId = 101 OR @DataSource = 'LogAdminAdjustWallet'
+		BEGIN
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime)
+				,Amount * CASE
+							WHEN Direction = 1 THEN 1 -- 3rd Add
+							WHEN Direction = 2 THEN -1 -- 3rd Minus
+							ELSE 0 END
+			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 0 -- Approved
 		END
 
 		-- VIPUpgradeReview

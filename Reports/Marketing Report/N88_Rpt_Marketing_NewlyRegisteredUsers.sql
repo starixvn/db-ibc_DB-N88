@@ -1,4 +1,7 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+USE bodb_N88
+GO
+
 ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_NewlyRegisteredUsers]
 	@LicenseeId			INT
 	,@FromDate			DATE
@@ -26,6 +29,7 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 */
 
 BEGIN
@@ -137,6 +141,20 @@ BEGIN
 				AND SiteId = @SiteId
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 2 -- Approved
+			GROUP BY CustId
+
+			-- LogAdminAdjustWallet
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'LogAdminAdjustWallet'
+
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT CustId, @BonusTypeName
+			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND Status = 0 -- Approved
 			GROUP BY CustId
 
 			-- VipUpgradeReview

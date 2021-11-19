@@ -27,6 +27,7 @@ AS
 		- 20210629@Sol: MPA - Apply Currency permission - [RedmineID: #157588]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 
 	Param's Explanation:
 		@GroupBy
@@ -217,8 +218,8 @@ BEGIN
 					,CustId, CurrencyId
 					,COUNT(1) AS BetCount
 					,SUM(Amount * CASE
-									WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
-									WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+									WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+									WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 									ELSE 0 END) AS Amount
 				FROM dbo.AdjustmentInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -226,6 +227,39 @@ BEGIN
 					AND SiteId = @SiteId
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 					AND Status = 2 -- Approved
+				GROUP BY
+					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
+					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+					,CustId, CurrencyId
+			) a
+				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY a.Date, a.CustId
+		END
+
+		-- LogAdminAdjustWallet
+		SET @BonusTypeId = NULL
+		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'LogAdminAdjustWallet' AND IsSelected = 1
+		
+		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
+		BEGIN
+			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
+			SELECT a.Date, @BonusTypeName, @BonusTypeId, a.CustId, 'LogAdminAdjustWallet', SUM(a.BetCount), SUM(a.Amount * e.Rate)
+			FROM (
+				SELECT
+					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
+					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+					,CustId, CurrencyId
+					,COUNT(1) AS BetCount
+					,SUM(Amount * CASE
+									WHEN Direction = 1 THEN 1 -- 3rd Add
+									WHEN Direction = 2 THEN -1 -- 3rd Minus
+									ELSE 0 END) AS Amount
+				FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+					AND Status = 0 -- Approved
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))

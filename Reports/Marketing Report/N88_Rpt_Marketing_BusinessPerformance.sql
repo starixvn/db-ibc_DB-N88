@@ -30,6 +30,7 @@ AS
 		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -276,6 +277,20 @@ BEGIN
 				AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
 				AND SiteId = @SiteId
 				AND Status = 2 -- Approved
+			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
+			-- LogAdminAdjustWallet
+			INSERT INTO #Bonus (CustId, CurrencyId, ExchangeDate, BonusAmount)
+			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,SUM(Amount * CASE
+								WHEN Direction = 1 THEN 1 -- 3rd Add
+								WHEN Direction = 2 THEN -1 -- 3rd Minus
+								ELSE 0 END) AS Amount
+			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
+				AND SiteId = @SiteId
+				AND Status = 0 -- Approved
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 
 			-- VIPUpgradeReview

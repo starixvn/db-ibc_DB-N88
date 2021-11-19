@@ -13,6 +13,7 @@ AS
 
 	Revisions:
 		- 20211028@Percy: Initialize function [RedmineID: #161048]
+		- 20211118@Percy: Add DataSource: LogAdminAdjustWallet [RedmineID: #161048]
 */
 
 RETURN
@@ -23,6 +24,7 @@ RETURN
 		,(1, 1, 'Welcome Bonus', 'BonusInfo'), (2, 2, 'ReDeposit', 'BonusInfo'), (3, 3, 'FreeBet', 'BonusInfo'), (7, 7, 'Cashback', 'BonusInfo')
 		,(0, 0, 'Unidentified', 'RebateMLog'), (1, 6, 'Rebate', 'RebateMLog')
 		,(101, 101, 'Others', 'AdjustmentInfo') -- Manual Adjustment
+		,(101, 101, 'Others', 'LogAdminAdjustWallet') -- Manual Adjustment
 		,(102, 102, 'Prize Draw', 'DrawLog')
 		,(103, 103, 'VIP Upgrade', 'VIPUpgradeReview')
 	) AS t (DBTypeId, BonusTypeId, BonusTypeName, DataSource)

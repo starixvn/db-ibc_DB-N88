@@ -1,10 +1,1 @@
-Reports\Marketing Report\N88_Rpt_Marketing_BonusClaimed_Detail.sql
-Reports\Marketing Report\N88_Rpt_Marketing_BonusClaimed.sql
-Reports\Marketing Report\N88_Rpt_Marketing_Deposit_Detail.sql
-Reports\Marketing Report\N88_Rpt_Marketing_Deposit.sql
-Reports\Marketing Report\N88_Rpt_Marketing_NewlyRegisteredUsers_Detail.sql
-Reports\Marketing Report\N88_Rpt_Marketing_NewlyRegisteredUsers.sql
-Reports\Marketing Report\N88_Rpt_Marketing_Revenue.sql
-Reports\Marketing Report\N88_Rpt_Marketing_UserActivities.sql
-Reports\Marketing Report\N88_Rpt_Marketing_Withdrawal_Detail.sql
-Reports\Marketing Report\N88_Rpt_Marketing_Withdrawal.sql
+Reports\N88_BonusType_Sel.sql

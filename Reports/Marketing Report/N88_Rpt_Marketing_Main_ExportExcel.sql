@@ -31,6 +31,7 @@ AS
 		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 */
 
 BEGIN
@@ -129,22 +130,10 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND (
-				EXISTS (
-					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE c.CustId = r.CustId
-						AND r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-						AND r.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				)
-				OR EXISTS (
-					SELECT 1 
-					FROM dbo.TpTransferInfo t WITH (NOLOCK)
-					WHERE c.CustId = t.CustId
-						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-						AND t.CreateTime >= @FromDateTimeGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-						AND t.SiteId = @SiteId
-				)
+			AND EXISTS (
+				SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE c.CustId = r.CustId
+					AND r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			)
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
@@ -152,21 +141,10 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND (
-				EXISTS (
-					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE c.CustId = r.CustId
-						AND r.TransTime >= @FromDateMTDGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateMTDGMT)
-						AND r.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				)
-				OR EXISTS (
-					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
-					WHERE c.CustId = t.CustId
-						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
-						AND t.CreateTime >= @FromDateMTDGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateMTDGMT)
-						AND t.SiteId = @SiteId
-				)
+			AND EXISTS (
+				SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE c.CustId = r.CustId
+					AND r.TransTime >= @FromDateMTDGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateMTDGMT)
 			)
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
@@ -175,21 +153,10 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND (
-				EXISTS (
-					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE c.CustId = r.CustId
-						AND r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-						AND r.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				)
-				OR EXISTS (
-					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
-					WHERE c.CustId = t.CustId
-						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-						AND t.CreateTime >= @FromDateTimeGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-						AND t.SiteId = @SiteId
-				)
+			AND EXISTS (
+				SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE c.CustId = r.CustId
+					AND r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			)
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
@@ -197,21 +164,10 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND (
-				EXISTS (
-					SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE c.CustId = r.CustId
-						AND r.TransTime >= @FromDateMTDGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateMTDGMT)
-						AND r.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				)
-				OR EXISTS (
-					SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK)
-					WHERE c.CustId = t.CustId
-						AND t.WinlostDate BETWEEN DATEADD(DAY, -1, @FromDateMTD) AND DATEADD(DAY, 1, @ToDateMTD)
-						AND t.CreateTime >= @FromDateMTDGMT AND t.CreateTime < DATEADD(DAY, 1, @ToDateMTDGMT)
-						AND t.SiteId = @SiteId
-				)
+			AND EXISTS (
+				SELECT 1 FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE c.CustId = r.CustId
+					AND r.TransTime >= @FromDateMTDGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateMTDGMT)
 			)
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
@@ -371,6 +327,28 @@ BEGIN
 					AND WinlostDate BETWEEN @tmpFDate AND @tmpTDate
 					AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
 					AND Status = 2 -- Approved
+				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			) a
+				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY a.CustId
+
+			-- LogAdminAdjustWallet
+			SET @BonusTypeId = NULL
+			SELECT TOP 1 @BonusTypeId = BonusTypeId FROM #BonusType WHERE DataSource = 'LogAdminAdjustWallet'
+
+			INSERT INTO #BonusUsers (CustId, BonusTypeId, IsDateRange, IsMTD, BonusClaimed)
+			SELECT a.CustId, @BonusTypeId, @IsDateRange, @IsMTD, SUM(a.BonusAmount * e.Rate)
+			FROM (
+				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+					,SUM(Amount * CASE
+									WHEN Direction = 1 THEN 1 -- 3rd Add
+									WHEN Direction = 2 THEN -1 -- 3rd Minus
+									ELSE 0 END) AS BonusAmount
+				FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+				WHERE SiteId = @SiteId
+					AND WinlostDate BETWEEN @tmpFDate AND @tmpTDate
+					AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
+					AND Status = 0 -- Approved
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) a
 				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
