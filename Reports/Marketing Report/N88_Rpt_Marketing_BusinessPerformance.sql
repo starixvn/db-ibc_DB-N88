@@ -105,32 +105,15 @@ BEGIN
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-			AND (
-					EXISTS 
-					(
-						SELECT 1 
-						FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
-						WHERE 
-							c.CustId = r.CustId
-							AND r.SiteId = @SiteId
-							AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-							AND 1 = CASE 
-									WHEN @FromLastXDaysGMT IS NULL THEN 1
-									WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
-								END
-					)
-					OR 
-					EXISTS 
-					(
-						SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) 
-						WHERE 
-							c.CustId = t.CustId
-							AND t.SiteId = @SiteId
-							AND 1 = CASE 
-										WHEN @FromLastXDaysGMT IS NULL THEN 1
-										WHEN t.CreateTime >= @FromLastXDaysGMT THEN 1
-									END
-					)
+			AND EXISTS (
+				SELECT 1 
+				FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
+				WHERE 
+					c.CustId = r.CustId
+					AND 1 = CASE 
+								WHEN @FromLastXDaysGMT IS NULL THEN 1
+								WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
+								ELSE 0 END
 			)
 
 	END
@@ -321,25 +304,10 @@ BEGIN
 			SELECT COUNT(CASE WHEN RegTime >= @tmpFDateGMT AND RegTime < @tmpTDateGMT THEN 1 ELSE NULL END) AS NewlyActiveRegisterUsers
 			FROM (
 				SELECT CustId
-				FROM (
-					SELECT CustId
-					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE TransTime >= @tmpFDateGMT AND TransTime < @tmpTDateGMT
-						AND SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-					GROUP BY CustId
-
-					UNION ALL
-					SELECT t.CustId
-					FROM dbo.TpTransferInfo t WITH (NOLOCK)
-						INNER JOIN dbo.Customer c WITH(NOLOCK)
-							ON t.CustId = c.CustId
-					WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-						AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
-						AND t.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-					GROUP BY t.CustId
-				) AS t
+				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE TransTime >= @tmpFDateGMT AND TransTime < @tmpTDateGMT
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				GROUP BY CustId
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId

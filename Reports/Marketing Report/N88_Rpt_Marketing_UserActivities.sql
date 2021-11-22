@@ -1,4 +1,6 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+USE bodb_N88
+GO
 ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_UserActivities]
 	@LicenseeId	INT
 	,@FromDate	DATE
@@ -17,6 +19,7 @@ AS
 		- 20200713@Percy: Initialize SP [RedmineID: #137395]
 		- 20200818@Percy: Change output format of daily mode [RedmineID: #137395]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - change from N88_RptWinloss to N88_SumWinloss - [RedmineID: #155334]
+		- 20211118@Percy: Change code to get Active Players [RedmineID: #161048]
 
 	Param's Explanation:
 		. ViewBy:
@@ -47,27 +50,12 @@ BEGIN
 		INSERT INTO #UserActivities (WinlostDate, CustId, IsActive, IsNewlyRegister)
 		SELECT a.WinlostDate, a.CustId, 1, CASE WHEN c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 ELSE 0 END
 		FROM (
-			SELECT WinlostDate, CustId
-			FROM (
-				SELECT CONVERT(DATE,DATEADD(HOUR, @TimeZone, TransTime)) AS WinlostDate, CustId
-				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-				WHERE r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND r.SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-				GROUP BY DATEADD(HOUR, @TimeZone, TransTime), CustId
-
-				UNION ALL
-				SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), t.CustId
-				FROM dbo.TpTransferInfo t WITH (NOLOCK)
-					INNER JOIN dbo.Customer c WITH(NOLOCK)
-						ON t.CustId = c.CustId
-				WHERE WinlostDate BETWEEN DATEADD(DAY, -1, @FromDate) AND DATEADD(DAY, 1, @ToDate)
-					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND t.SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-				GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), t.CustId
-			) AS t
-			GROUP BY WinlostDate, CustId
+			SELECT CONVERT(DATE,DATEADD(HOUR, @TimeZone, TransTime)) AS WinlostDate, CustId
+			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+			WHERE r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+			GROUP BY DATEADD(HOUR, @TimeZone, TransTime), CustId
 		) AS a
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
 		WHERE c.IsTest = 0
