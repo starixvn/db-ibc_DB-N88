@@ -327,6 +327,7 @@ BEGIN
 					AND WinlostDate BETWEEN @tmpFDate AND @tmpTDate
 					AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
 					AND Status = 2 -- Approved
+					AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) a
 				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -348,7 +349,8 @@ BEGIN
 				WHERE SiteId = @SiteId
 					AND WinlostDate BETWEEN @tmpFDate AND @tmpTDate
 					AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
-					AND Status = 0 -- Approved
+					AND Status = 0 -- Success
+					AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) a
 				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate

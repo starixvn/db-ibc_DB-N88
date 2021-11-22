@@ -138,8 +138,8 @@ BEGIN
 			FROM (
 				SELECT a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime)) AS ExchangeDate
 					,SUM(a.Amount * CASE
-									WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
-									WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
+									WHEN a.AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+									WHEN a.AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 									ELSE 0 END
 									/ CASE WHEN a.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
 				FROM dbo.AdjustmentInfo a WITH (NOLOCK)
@@ -150,6 +150,7 @@ BEGIN
 					AND c.IsTest = 0
 					AND a.Status = 2 -- Approved
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+					AND 1 = CASE WHEN a.CreateTime < '2021-10-31 16:00' OR a.AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
 				GROUP BY a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime))
 			) a
 				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
@@ -174,7 +175,8 @@ BEGIN
 					AND a.CreateTime >= @FromDateTimeGMT AND a.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND a.SiteId = @SiteId
 					AND c.IsTest = 0
-					AND a.Status = 0 -- Approved
+					AND a.Status = 0 -- Success
+					AND a.CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				GROUP BY a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime))
 			) a
