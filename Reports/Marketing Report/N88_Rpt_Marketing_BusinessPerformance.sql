@@ -269,8 +269,8 @@ BEGIN
 			INSERT INTO #Bonus (CustId, CurrencyId, ExchangeDate, BonusAmount)
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 				,SUM(Amount * CASE
-								WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
-								WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+								WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+								WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 								ELSE 0 END) AS Amount
 			FROM dbo.AdjustmentInfo WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
