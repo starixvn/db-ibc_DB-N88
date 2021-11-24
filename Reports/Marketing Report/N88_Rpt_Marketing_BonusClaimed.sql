@@ -29,6 +29,7 @@ AS
 			2. Breakdown by original currency
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 */
 
 BEGIN
@@ -137,8 +138,8 @@ BEGIN
 			FROM (
 				SELECT a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime)) AS ExchangeDate
 					,SUM(a.Amount * CASE
-									WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
-									WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+									WHEN a.AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+									WHEN a.AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 									ELSE 0 END
 									/ CASE WHEN a.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
 				FROM dbo.AdjustmentInfo a WITH (NOLOCK)
@@ -148,6 +149,34 @@ BEGIN
 					AND a.SiteId = @SiteId
 					AND c.IsTest = 0
 					AND a.Status = 2 -- Approved
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+					AND 1 = CASE WHEN a.CreateTime < '2021-10-31 16:00' OR a.AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
+				GROUP BY a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime))
+			) a
+				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY a.CustId, a.CurrencyId
+
+			-- LogAdminAdjustWallet
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'LogAdminAdjustWallet'
+
+			INSERT INTO #BonusInfo (BonusCode, CustId, Currency, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT @BonusTypeName, a.CustId, a.CurrencyId, SUM(a.BonusAmount) AS BonusAmount, SUM(a.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
+			FROM (
+				SELECT a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime)) AS ExchangeDate
+					,SUM(a.Amount * CASE
+									WHEN Direction = 1 THEN 1 -- 3rd Add
+									WHEN Direction = 2 THEN -1 -- 3rd Minus
+									ELSE 0 END
+									/ CASE WHEN a.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
+				FROM dbo.LogAdminAdjustWallet a WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
+				WHERE a.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND a.CreateTime >= @FromDateTimeGMT AND a.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND a.SiteId = @SiteId
+					AND c.IsTest = 0
+					AND a.Status = 0 -- Success
+					AND a.CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 				GROUP BY a.CurrencyId, a.CustId, CONVERT(DATE, DATEADD(HOUR, -4, a.CreateTime))
 			) a

@@ -30,6 +30,7 @@ AS
 		- 20210719@Sol: MPA - Apply Date Range permission & some enhancement - [RedmineID: #158257]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -104,32 +105,15 @@ BEGIN
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-			AND (
-					EXISTS 
-					(
-						SELECT 1 
-						FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
-						WHERE 
-							c.CustId = r.CustId
-							AND r.SiteId = @SiteId
-							AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-							AND 1 = CASE 
-									WHEN @FromLastXDaysGMT IS NULL THEN 1
-									WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
-								END
-					)
-					OR 
-					EXISTS 
-					(
-						SELECT 1 FROM dbo.TpTransferInfo t WITH (NOLOCK) 
-						WHERE 
-							c.CustId = t.CustId
-							AND t.SiteId = @SiteId
-							AND 1 = CASE 
-										WHEN @FromLastXDaysGMT IS NULL THEN 1
-										WHEN t.CreateTime >= @FromLastXDaysGMT THEN 1
-									END
-					)
+			AND EXISTS (
+				SELECT 1 
+				FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
+				WHERE 
+					c.CustId = r.CustId
+					AND 1 = CASE 
+								WHEN @FromLastXDaysGMT IS NULL THEN 1
+								WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
+								ELSE 0 END
 			)
 
 	END
@@ -178,25 +162,10 @@ BEGIN
 			SELECT COUNT(1) AS ActiveUsers
 			FROM (
 				SELECT CustId
-				FROM (
-					SELECT CustId
-					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE TransTime >= @tmpFDateGMT AND TransTime < @tmpTDateGMT
-						AND SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-					GROUP BY CustId
-
-					UNION ALL
-					SELECT t.CustId
-					FROM dbo.TpTransferInfo t WITH (NOLOCK)
-						INNER JOIN dbo.Customer c WITH(NOLOCK)
-							ON t.CustId = c.CustId
-					WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-						AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
-						AND t.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-					GROUP BY t.CustId
-				) AS t
+				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE TransTime >= @tmpFDateGMT AND TransTime < @tmpTDateGMT
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				GROUP BY CustId
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
@@ -268,14 +237,30 @@ BEGIN
 			INSERT INTO #Bonus (CustId, CurrencyId, ExchangeDate, BonusAmount)
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 				,SUM(Amount * CASE
-								WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
-								WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+								WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+								WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 								ELSE 0 END) AS Amount
 			FROM dbo.AdjustmentInfo WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
 				AND SiteId = @SiteId
 				AND Status = 2 -- Approved
+				AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
+			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+
+			-- LogAdminAdjustWallet
+			INSERT INTO #Bonus (CustId, CurrencyId, ExchangeDate, BonusAmount)
+			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+				,SUM(Amount * CASE
+								WHEN Direction = 1 THEN 1 -- 3rd Add
+								WHEN Direction = 2 THEN -1 -- 3rd Minus
+								ELSE 0 END) AS Amount
+			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
+				AND SiteId = @SiteId
+				AND Status = 0 -- Success
+				AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 
 			-- VIPUpgradeReview
@@ -306,25 +291,10 @@ BEGIN
 			SELECT COUNT(CASE WHEN RegTime >= @tmpFDateGMT AND RegTime < @tmpTDateGMT THEN 1 ELSE NULL END) AS NewlyActiveRegisterUsers
 			FROM (
 				SELECT CustId
-				FROM (
-					SELECT CustId
-					FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-					WHERE TransTime >= @tmpFDateGMT AND TransTime < @tmpTDateGMT
-						AND SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
-					GROUP BY CustId
-
-					UNION ALL
-					SELECT t.CustId
-					FROM dbo.TpTransferInfo t WITH (NOLOCK)
-						INNER JOIN dbo.Customer c WITH(NOLOCK)
-							ON t.CustId = c.CustId
-					WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-						AND CreateTime >= @tmpFDateGMT AND CreateTime < @tmpTDateGMT
-						AND t.SiteId = @SiteId
-						AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
-					GROUP BY t.CustId
-				) AS t
+				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
+				WHERE TransTime >= @tmpFDateGMT AND TransTime < @tmpTDateGMT
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				GROUP BY CustId
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId

@@ -27,6 +27,7 @@ AS
 		- 20210629@Sol: MPA - Apply Currency permission - [RedmineID: #157588]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
+		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 
 	Param's Explanation:
 		@GroupBy
@@ -217,8 +218,8 @@ BEGIN
 					,CustId, CurrencyId
 					,COUNT(1) AS BetCount
 					,SUM(Amount * CASE
-									WHEN AdjustType IN (1, 4) THEN -1 -- Debit, Decrease bonus
-									WHEN AdjustType IN (2, 3) THEN 1 -- Credit, Increase bonus
+									WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+									WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 									ELSE 0 END) AS Amount
 				FROM dbo.AdjustmentInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -226,6 +227,41 @@ BEGIN
 					AND SiteId = @SiteId
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 					AND Status = 2 -- Approved
+					AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
+				GROUP BY
+					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
+					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+					,CustId, CurrencyId
+			) a
+				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY a.Date, a.CustId
+		END
+
+		-- LogAdminAdjustWallet
+		SET @BonusTypeId = NULL
+		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'LogAdminAdjustWallet' AND IsSelected = 1
+		
+		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
+		BEGIN
+			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
+			SELECT a.Date, @BonusTypeName, @BonusTypeId, a.CustId, 'LogAdminAdjustWallet', SUM(a.BetCount), SUM(a.Amount * e.Rate)
+			FROM (
+				SELECT
+					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
+					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
+					,CustId, CurrencyId
+					,COUNT(1) AS BetCount
+					,SUM(Amount * CASE
+									WHEN Direction = 1 THEN 1 -- 3rd Add
+									WHEN Direction = 2 THEN -1 -- 3rd Minus
+									ELSE 0 END) AS Amount
+				FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+					AND Status = 0 -- Success
+					AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
@@ -344,12 +380,24 @@ BEGIN
 			INNER JOIN #BonusType bt ON b.BonusTypeId = bt.BonusTypeId AND b.DataSource = bt.DataSource AND bt.IsSelected = 1
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
-														AND (p.Description LIKE '%' + @BonusName + '%' OR p.BonusCode LIKE '%' + @BonusName + '%')
+														AND (
+															@BonusName = ''
+															OR CHARINDEX(@BonusName, p.Description, 1) > 0
+															OR CHARINDEX(@BonusName, p.BonusCode, 1) > 0
+														)
 														AND b.EventId IS NULL
 			LEFT JOIN dbo.EventDraw e WITH (NOLOCK) ON b.EventId = e.EventId AND e.SiteId = @SiteId
-														AND e.EventName LIKE '%' + @BonusName + '%'
+														AND (
+															@BonusName = ''
+															OR CHARINDEX(@BonusName, e.EventName, 1) > 0
+														)
 		WHERE c.IsTest = 0
-			AND (@BonusName = '' OR b.BonusCode LIKE '%' + @BonusName + '%' OR p.BonusCode IS NOT NULL OR e.EventId IS NOT NULL)
+			AND (
+				@BonusName = ''
+				OR CHARINDEX(@BonusName, b.BonusCode, 1) > 0
+				OR p.BonusCode IS NOT NULL
+				OR e.EventId IS NOT NULL
+			)
 			AND (p.Status IS NULL OR ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), p.Status) + ',%')
 		GROUP BY b.CustId
 			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE b.BonusCode END
