@@ -30,6 +30,7 @@ AS
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220214@Percy: Apply SignupURL function [RedmineID: #164724]
 */
 
 BEGIN
@@ -204,55 +205,22 @@ BEGIN
 		ORDER BY CASE WHEN b.BonusCode IS NULL THEN 1 ELSE 0 END, b.BonusCode
 
 		-- Detail by Signup URL
-		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
-		DECLARE @MainUrls TABLE (Url VARCHAR(200))
 		CREATE TABLE #Affiliate (CustId INT, AffId INT)
 		
 		IF @SiteId = 1
 		BEGIN
-			SELECT @MainUrl = 'Nova88.net', @APPSignupUrl = 'app.n17881788.com'
-
-			INSERT INTO @MainUrls (Url)
-			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
-			
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
 			FROM Affiliate_N88.dbo.MemberInfo WITH (NOLOCK)
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
-			SELECT @CreditAgentName = 'Goal123Ref01', @MainUrl = 'Goal123.com', @APPSignupUrl = 'app.goal123.com'
-
-			INSERT INTO @MainUrls (Url)
-			VALUES ('www.goal123.com'), ('m.goal123.com')
-					,('m.sutbong123.com') 
-					,('mrelease.goal123.com')
-					,('release.goal123.com')     
-					,('www.sutbong123.com')     
-					,('www.duongdenkhungthanh.com')
-					,('m.duongdenkhungthanh.com')
-					,('https://www.duongdenkhungthanh.com')
-					,('https://m.duongdenkhungthanh.com')
-			
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
 			FROM Affiliate_N8G.dbo.MemberInfo WITH (NOLOCK)
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
-			SELECT @CreditAgentName = 'BwingRef01', @MainUrl = 'Bwing.com', @APPSignupUrl = 'app.bwing.com', @DefaultUrl = 'www.bwing.com'
-
-			INSERT INTO @MainUrls (Url)
-			VALUES ('www.bwing.com'), ('m.bwing.com')
-					,('release.bwing.com')
-					,('mrelease.bwing.com')
-					,('www.bwinghotevent.club')
-					,('m.bwinghotevent.club')    
-					,('www.bomtanhoitu.live')
-					,('m.bomtanhoitu.live')
-					,('https://www.bwinghotevent.club')
-					,('https://www.bomtanhoitu.live')
-			
 			INSERT INTO #Affiliate (CustId, AffId)
 			SELECT CustId, AffId
 			FROM Affiliate_N8B.dbo.MemberInfo WITH (NOLOCK)
@@ -263,33 +231,33 @@ BEGIN
 			SELECT
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
-					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
-					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+					WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN 'Bwing.com'
+					WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 					WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 					ELSE 'None' END AS SignUpSource
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
-					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
-					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+					WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN 'www.bwing.com'
+					WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 					ELSE cg.SignupUrl END AS SignupUrl
-				,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
-					WHEN ag.UserName = @CreditAgentName THEN 4
-					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1 -- main site
-					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
+					WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 4
+					WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN 1 -- main site
+					WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 3
 					WHEN cg.CustId IS NOT NULL THEN 5
 					ELSE 6 END AS OrderCol
+				,COUNT(1) AS NewlyRegisterUsers, COUNT(d.CustId) AS Deposit, SUM(ISNULL(d.FirstDepositAmount, 0)) AS FirstDepositAmount, SUM(ISNULL(d.TotalDepositAmount, 0)) AS TotalDepositAmount
 			FROM dbo.Customer c WITH (NOLOCK)
 				INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
 				LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
+				LEFT JOIN dbo.N88_f_SignupURL() s ON cg.SignupUrl = s.SignupUrl AND s.SiteId = @SiteId
 				LEFT JOIN #Affiliate a ON c.CustId = a.CustId
-				LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
 				LEFT JOIN #DepositInfo d ON c.CustId = d.CustId
 			WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND c.SiteId = @SiteId
@@ -298,25 +266,25 @@ BEGIN
 			GROUP BY
 				CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
-					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
-					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+					WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN 'Bwing.com'
+					WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 					WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 					ELSE 'None' END
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 'AFF'
-					WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
-					WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+					WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+					WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN 'www.bwing.com'
+					WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 					ELSE cg.SignupUrl END
 				,CASE
 					WHEN a.CustId IS NOT NULL THEN 2
-					WHEN ag.UserName = @CreditAgentName THEN 4
-					WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
-					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN 1 -- main site
-					WHEN cg.SignupUrl = @APPSignupUrl THEN 3
+					WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 4
+					WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 1 -- main site
+					WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN 1 -- main site
+					WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 3
 					WHEN cg.CustId IS NOT NULL THEN 5
 					ELSE 6 END
 		) r

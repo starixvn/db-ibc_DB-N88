@@ -29,16 +29,18 @@ AS
 		- 20210629@Sol: MPA - Apply Currency permission - [RedmineID: #157588]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220214@Percy: Return TransactionType column [RedmineID: #164724]
 
 	Param's Explanation:
 		@SortbyId:
 			. 1 = Username
 			. 2 = Claim Date
 			. 3 = Bonus Amount Claimed
-			. 4 = Deposit Amount
-			. 5 = Withdrawal Amount
-			. 6 = Status
-			. 7 = Percent Completion
+			. 4 = Transaction Type
+			. 5 = Deposit Amount
+			. 6 = Withdrawal Amount
+			. 7 = Status
+			. 8 = Percent Completion
 */
 
 BEGIN
@@ -50,7 +52,7 @@ BEGIN
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
-	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1))
+	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1))
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 
@@ -124,8 +126,8 @@ BEGIN
 		-- AdjustmentInfo
 		IF @BonusTypeId = 101 OR @DataSource = 'AdjustmentInfo'
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime)
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, TransactionType, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), AdjustType
 				,Amount * CASE
 							WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
 							WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
@@ -142,8 +144,8 @@ BEGIN
 		-- LogAdminAdjustWallet
 		IF @BonusTypeId = 101 OR @DataSource = 'LogAdminAdjustWallet'
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime)
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, TransactionType, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), -Direction
 				,Amount * CASE
 							WHEN Direction = 1 THEN 1 -- 3rd Add
 							WHEN Direction = 2 THEN -1 -- 3rd Minus
@@ -223,9 +225,9 @@ BEGIN
 	SELECT @NRows = COUNT(1) FROM #BonusInfo
 
 	-- Return
-	SELECT RowId, UserName, @BonusCode AS BonusCode, ClaimedDate, ClaimedAmount, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
+	SELECT RowId, UserName, @BonusCode AS BonusCode, ClaimedDate, ClaimedAmount, TransactionType, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
 	FROM (
-		SELECT UserName, ClaimedDate, ClaimedAmount, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
+		SELECT UserName, ClaimedDate, ClaimedAmount, TransactionType, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
 			,ROW_NUMBER() OVER(ORDER BY
 							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN UserName END ASC
 							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN UserName END DESC
@@ -233,28 +235,40 @@ BEGIN
 							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN ClaimedDate END DESC
 							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN ClaimedAmount END ASC
 							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN ClaimedAmount END DESC
-							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN TotalDeposit END ASC
-							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN TotalDeposit END DESC
-							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN TotalWithdrawal END ASC
-							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN TotalWithdrawal END DESC
-							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN Status END ASC
-							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN Status END DESC
-							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN PercentagedCompletion END ASC
-							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN PercentagedCompletion END DESC) AS RowId
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN TransactionType END ASC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN TransactionType END DESC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN TotalDeposit END ASC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN TotalDeposit END DESC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN TotalWithdrawal END ASC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN TotalWithdrawal END DESC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN Status END ASC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN Status END DESC
+							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN PercentagedCompletion END ASC
+							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN PercentagedCompletion END DESC) AS RowId
 		FROM (
-		SELECT c.UserName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
-		FROM dbo.Customer c WITH (NOLOCK)
-			INNER JOIN #BonusInfo b ON b.CustId = c.CustId
-			LEFT JOIN (
-				SELECT d.CustId, SUM(d.Amount) AS Amount
-				FROM #DepositInfo d
-				GROUP BY d.CustId
-			) d ON d.CustId = c.CustId
-			LEFT JOIN (
-				SELECT w.CustId, SUM(w.Amount) AS Amount
-				FROM #WithdrawalInfo w
-				GROUP BY w.CustId
-			) w ON w.CustId = c.CustId
+			SELECT c.UserName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
+				,CONVERT(VARCHAR(100),
+					CASE b.TransactionType
+						WHEN -1 THEN '3rd Add'
+						WHEN -2 THEN '3rd Minus'
+						WHEN 1 THEN 'Credit'
+						WHEN 2 THEN 'Debit'
+						WHEN 3 THEN 'Increase bonus'
+						WHEN 4 THEN 'Decrease bonus'
+						END
+					) AS TransactionType
+			FROM dbo.Customer c WITH (NOLOCK)
+				INNER JOIN #BonusInfo b ON b.CustId = c.CustId
+				LEFT JOIN (
+					SELECT d.CustId, SUM(d.Amount) AS Amount
+					FROM #DepositInfo d
+					GROUP BY d.CustId
+				) d ON d.CustId = c.CustId
+				LEFT JOIN (
+					SELECT w.CustId, SUM(w.Amount) AS Amount
+					FROM #WithdrawalInfo w
+					GROUP BY w.CustId
+				) w ON w.CustId = c.CustId
 		) t
 	) r
 	WHERE RowId BETWEEN @RowStart AND @RowEnd
