@@ -15,6 +15,7 @@ AS
 		- 20211028@Percy: Initialize function [RedmineID: #161048]
 		- 20211118@Percy: Add DataSource: LogAdminAdjustWallet [RedmineID: #161048]
 		- 20211216@Percy: Add new type: Retention Free Bet [RedmineID: #166196]
+		- 20220311@Percy: Add new type: Manual Bonus [RedmineID: #169823]
 */
 
 RETURN
@@ -23,7 +24,7 @@ RETURN
 	FROM (
 		VALUES (CONVERT(SMALLINT, 0), CONVERT(SMALLINT, 0), CONVERT(VARCHAR(100), 'Unidentified'), CONVERT(VARCHAR(100), 'BonusInfo'))
 		,(1, 1, 'Welcome Bonus', 'BonusInfo'), (2, 2, 'ReDeposit', 'BonusInfo'), (3, 3, 'FreeBet', 'BonusInfo'), (7, 7, 'Cashback', 'BonusInfo')
-		,(9, 9, 'Retention Free Bet', 'BonusInfo')
+		,(8, 8, 'Manual Bonus', 'BonusInfo'), (9, 9, 'Retention Free Bet', 'BonusInfo')
 		,(0, 0, 'Unidentified', 'RebateMLog'), (1, 6, 'Rebate', 'RebateMLog')
 		,(101, 101, 'Others', 'AdjustmentInfo') -- Manual Adjustment
 		,(101, 101, 'Others', 'LogAdminAdjustWallet') -- Manual Adjustment
