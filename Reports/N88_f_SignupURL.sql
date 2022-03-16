@@ -50,6 +50,10 @@ RETURN
 						,('www.bwing06.com'), ('www.bwing07.com'), ('www.bwing08.com'), ('www.bwing09.com'), ('www.bwing10.com')
 						,('www.bwing11.com'), ('www.bwing12.com'), ('www.bwing13.com'), ('www.bwing14.com'), ('www.bwing15.com')
 						,('www.bwing16.com'), ('www.bwing17.com'), ('www.bwing18.com'), ('www.bwing19.com'), ('www.bwing20.com')
+						,('m.bwing01.com'), ('m.bwing02.com'), ('m.bwing03.com'), ('m.bwing04.com'), ('m.bwing05.com')
+						,('m.bwing06.com'), ('m.bwing07.com'), ('m.bwing08.com'), ('m.bwing09.com'), ('m.bwing10.com')
+						,('m.bwing11.com'), ('m.bwing12.com'), ('m.bwing13.com'), ('m.bwing14.com'), ('m.bwing15.com')
+						,('m.bwing16.com'), ('m.bwing17.com'), ('m.bwing18.com'), ('m.bwing19.com'), ('m.bwing20.com')
 					) m (SignupURL)
 	UNION ALL SELECT 3, 4, 'APP', 'app.bwing.com'
 	UNION ALL SELECT 3, 5, 'Landing Pages', NULL
