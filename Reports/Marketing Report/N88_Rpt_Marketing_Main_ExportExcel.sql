@@ -455,9 +455,12 @@ BEGIN
 
 		-- Registration Details
 		CREATE TABLE #Affiliate (CustId INT, AffName VARCHAR(50))
+		DECLARE @MainURL VARCHAR(200)
 
 		IF @SiteId = 1
 		BEGIN
+			SELECT @MainURL = 'Nova88.net'
+			
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N88.dbo.MemberInfo mi WITH (NOLOCK)
@@ -465,6 +468,8 @@ BEGIN
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
+			SELECT @MainURL = 'Goal123.com'
+			
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8G.dbo.MemberInfo mi WITH (NOLOCK)
@@ -472,6 +477,8 @@ BEGIN
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
+			SELECT @MainURL = 'Bwing.com'
+			
 			INSERT INTO #Affiliate (CustId, AffName)
 			SELECT mi.CustId, ai.UserName
 			FROM Affiliate_N8B.dbo.MemberInfo mi WITH (NOLOCK)
@@ -489,7 +496,7 @@ BEGIN
 						WHEN a.CustId IS NOT NULL THEN 'AFF'
 						WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
 						WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-						WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN 'Bwing.com'
+						WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN @MainURL
 						ELSE cg.SignupUrl END
 					) AS SignupUrl
 				,CASE
@@ -517,7 +524,7 @@ BEGIN
 						WHEN a.CustId IS NOT NULL THEN 'AFF'
 						WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
 						WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-						WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN 'Bwing.com'
+						WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN @MainURL
 						ELSE cg.SignupUrl END
 					)
 				,CASE
