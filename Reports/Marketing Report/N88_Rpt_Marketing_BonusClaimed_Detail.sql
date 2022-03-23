@@ -29,6 +29,7 @@ AS
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220214@Percy: Add @SortbyId = 0 for default sort  [RedmineID: #164724]
 
 	Param's Explanation:
 		@SortbyId:
@@ -274,7 +275,9 @@ BEGIN
 		FROM (
 			SELECT BonusCode, Username, Currency, DATEADD(HOUR, @TimeZone, RegTime) AS RegTime, SignupUrl, AffCode, TotalDepositAmount, TotalWithdrawalAmount, TotalBonusAmount
 				,ROW_NUMBER() OVER(ORDER BY
-						 CASE WHEN BonusCode IS NULL THEN 1 ELSE 0 END
+						 CASE WHEN @SortbyId = 0 THEN CASE WHEN BonusCode IS NULL THEN 1 ELSE 0 END END
+						,CASE WHEN @SortbyId = 0 THEN BonusCode END ASC
+						,CASE WHEN @SortbyId = 0 THEN Username END ASC
 						,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN BonusCode END ASC
 						,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN BonusCode END DESC
 						,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN Username END ASC

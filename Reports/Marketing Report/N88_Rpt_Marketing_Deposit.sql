@@ -22,6 +22,7 @@ AS
 		- 20210401@Percy: Add Number of Players column [RedmineID: #150876]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
+		- 20220214@Percy: Apply SignupURL function [RedmineID: #164724]
 */
 
 BEGIN
@@ -114,16 +115,12 @@ BEGIN
 			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Detail by Signup URL
-		DECLARE @CreditAgentName VARCHAR(30) = '', @MainUrl VARCHAR(200), @DefaultUrl VARCHAR(200), @APPSignupUrl VARCHAR(200)
-		DECLARE @MainUrls TABLE (Url VARCHAR(200))
 		CREATE TABLE #Affiliate (CustId INT)
+		DECLARE @MainURL VARCHAR(200)
 		
 		IF @SiteId = 1
 		BEGIN
-			SELECT @MainUrl = 'Nova88.net', @APPSignupUrl = 'app.n17881788.com'
-
-			INSERT INTO @MainUrls (Url)
-			VALUES ('www.nova88.com'), ('www.nova88.net'), ('m.nova88.net')
+			SELECT @MainURL = 'Nova88.net'
 			
 			INSERT INTO #Affiliate (CustId)
 			SELECT CustId
@@ -131,18 +128,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 2
 		BEGIN
-			SELECT @CreditAgentName = 'Goal123Ref01', @MainUrl = 'Goal123.com', @APPSignupUrl = 'app.goal123.com'
-
-			INSERT INTO @MainUrls (Url)
-			VALUES ('www.goal123.com'), ('m.goal123.com')
-					,('m.sutbong123.com') 
-					,('mrelease.goal123.com')
-					,('release.goal123.com')     
-					,('www.sutbong123.com')     
-					,('www.duongdenkhungthanh.com')
-					,('m.duongdenkhungthanh.com')
-					,('https://www.duongdenkhungthanh.com')
-					,('https://m.duongdenkhungthanh.com')
+			SELECT @MainURL = 'Goal123.com'
 			
 			INSERT INTO #Affiliate (CustId)
 			SELECT CustId
@@ -150,18 +136,7 @@ BEGIN
 		END
 		ELSE IF @SiteId = 3
 		BEGIN
-			SELECT @CreditAgentName = 'BwingRef01', @MainUrl = 'Bwing.com', @APPSignupUrl = 'app.bwing.com', @DefaultUrl = 'www.bwing.com'
-
-			INSERT INTO @MainUrls (Url)
-			VALUES ('www.bwing.com'), ('m.bwing.com')
-					,('release.bwing.com')
-					,('mrelease.bwing.com')
-					,('www.bwinghotevent.club')
-					,('m.bwinghotevent.club')    
-					,('www.bomtanhoitu.live')
-					,('m.bomtanhoitu.live')
-					,('https://www.bwinghotevent.club')
-					,('https://www.bomtanhoitu.live')
+			SELECT @MainURL = 'Bwing.com'
 			
 			INSERT INTO #Affiliate (CustId)
 			SELECT CustId
@@ -171,18 +146,18 @@ BEGIN
 		SELECT
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+				WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+				WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN @MainURL
+				WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 				ELSE 'None' END AS SignUpSource
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+				WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+				WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN 'www.bwing.com'
+				WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 				ELSE cg.SignupUrl END AS SignupUrl
 			,SUM(d.FirstDepositAmount) AS FirstDepositAmount
 			,SUM(d.TotalDepositAmount) AS TotalDepositAmount
@@ -191,8 +166,8 @@ BEGIN
 			INNER JOIN dbo.Customer c with (nolock) on d.CustId = c.CustId
 			INNER JOIN dbo.Customer ag with (nolock) on c.AgentId = ag.CustId
 			LEFT JOIN dbo.CustRegInfo cg with (nolock) on c.CustId = cg.CustId
+			LEFT JOIN dbo.N88_f_SignupURL() s ON cg.SignupUrl = s.SignupUrl AND s.SiteId = @SiteId
 			LEFT JOIN #Affiliate a ON d.CustId = a.CustId
-			LEFT JOIN @MainUrls mu ON cg.SignupUrl = mu.Url
 		WHERE d.IsCompared = 0
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
@@ -200,18 +175,18 @@ BEGIN
 		GROUP BY
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR mu.Url IS NOT NULL THEN @MainUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+				WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+				WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) OR (s.GroupId = 3 AND s.SignupURL IS NOT NULL) THEN @MainURL
+				WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 				WHEN cg.CustId IS NOT NULL THEN 'Landing Pages'
 				ELSE 'None' END
 			,CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
-				WHEN ag.UserName = @CreditAgentName THEN 'Bong88/Viva88'
-				WHEN c.SiteId = 1 AND ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
-				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN @DefaultUrl
-				WHEN cg.SignupUrl = @APPSignupUrl THEN 'APP'
+				WHEN ag.UserName IN ('Goal123Ref01', 'BwingRef01') THEN 'Bong88/Viva88'
+				WHEN ag.UserName IN ('Nova88Ref05', 'Nova88Ref06', 'Nova88Ref07', 'Nova88Ref08') THEN 'Nova88.com'
+				WHEN (c.RegTime < '2020-08-20' AND cg.CustId IS NULL AND c.SiteId = 3) THEN 'www.bwing.com'
+				WHEN s.GroupId = 4 AND s.SignupURL IS NOT NULL THEN 'APP'
 				ELSE cg.SignupUrl END
 
 		DROP TABLE #Affiliate

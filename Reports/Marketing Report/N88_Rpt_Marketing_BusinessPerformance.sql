@@ -31,6 +31,7 @@ AS
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220214@Percy: Total Active Users base on Registration Date [RedmineID: #164724]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -87,7 +88,7 @@ BEGIN
 										ELSE NULL 
 									END
 									)
-				,@UptoTotalUsers = COUNT(CASE 
+			,@UptoTotalUsers = COUNT(CASE 
 											WHEN @FromLastXDaysGMT IS NULL AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT) THEN 1 
 											WHEN @FromLastXDaysGMT IS NOT NULL AND (c.RegTime >= @FromLastXDaysGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)) THEN 1 
 											ELSE NULL 
@@ -115,7 +116,7 @@ BEGIN
 								WHEN r.TransTime >= @FromLastXDaysGMT THEN 1
 								ELSE 0 END
 			)
-
+			AND (@FromLastXDaysGMT IS NULL OR c.RegTime >= @FromLastXDaysGMT)
 	END
 
 	-- Get data
