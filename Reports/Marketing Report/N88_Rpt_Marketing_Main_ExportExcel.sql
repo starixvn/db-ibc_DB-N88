@@ -33,6 +33,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220214@Percy: Remove some redundant information & apply SignupURL function [RedmineID: #164724]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 */
 
 BEGIN
@@ -344,6 +345,24 @@ BEGIN
 					AND SettleTime >= @tmpFDateGMT AND SettleTime < @tmpTDateGMT
 					AND Status = 4 -- Settled
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
+			) a
+				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY a.CustId
+
+			-- CustVerificationReward
+			SET @BonusTypeId = NULL
+			SELECT TOP 1 @BonusTypeId = BonusTypeId FROM #BonusType WHERE DataSource = 'CustVerificationReward'
+
+			INSERT INTO #BonusUsers (CustId, BonusTypeId, IsMTD, BonusClaimed)
+			SELECT a.CustId, @BonusTypeId, @IsMTD, SUM(a.BonusAmount * e.Rate)
+			FROM (
+				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate
+					,SUM(RewardAmount) AS BonusAmount
+				FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+				WHERE SiteId = @SiteId
+					AND WinlostDate BETWEEN @tmpFDate AND @tmpTDate
+					AND RewardTime >= @tmpFDateGMT AND RewardTime < @tmpTDateGMT
+				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
 			) a
 				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY a.CustId

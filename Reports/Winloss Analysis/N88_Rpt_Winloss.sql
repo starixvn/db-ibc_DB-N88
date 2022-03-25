@@ -49,6 +49,7 @@ AS
 		- 20210907@Percy: Enhance code get CustClosingBalance [RedmineID: #161291]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 
 	Param's Explanation:
 		@SortbyId:
@@ -440,6 +441,24 @@ BEGIN
 				AND Status = 4 -- Settled
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)), CustId, CurrencyId
 				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
+		) b
+			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+
+		-- Bonus: CustVerificationReward
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		FROM (
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime)) AS rptDate, CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate
+				,SUM(RewardAmount) AS Amount
+			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND RewardTime >= @FromDateTimeGMT0 AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime)), CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
 		) b
 			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY b.rptDate, b.CustId, b.CurrencyId

@@ -30,6 +30,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220214@Percy: Return TransactionType column [RedmineID: #164724]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 
 	Param's Explanation:
 		@SortbyId:
@@ -52,7 +53,7 @@ BEGIN
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
 	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 
-	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1))
+	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, DataSource VARCHAR(128), TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1))
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 
@@ -126,8 +127,8 @@ BEGIN
 		-- AdjustmentInfo
 		IF @BonusTypeId = 101 OR @DataSource = 'AdjustmentInfo'
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, TransactionType, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), AdjustType
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), 'AdjustmentInfo', AdjustType
 				,Amount * CASE
 							WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
 							WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
@@ -144,8 +145,8 @@ BEGIN
 		-- LogAdminAdjustWallet
 		IF @BonusTypeId = 101 OR @DataSource = 'LogAdminAdjustWallet'
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, TransactionType, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), -Direction
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), 'LogAdminAdjustWallet', Direction
 				,Amount * CASE
 							WHEN Direction = 1 THEN 1 -- 3rd Add
 							WHEN Direction = 2 THEN -1 -- 3rd Minus
@@ -170,6 +171,18 @@ BEGIN
 				AND SiteId = @SiteId
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 4 -- Settled
+		END
+
+		-- CustVerificationRewardDetail
+		IF @DataSource = 'CustVerificationReward'
+		BEGIN
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, RewardTime), DATEADD(HOUR, @TimeZone, RewardTime), 'CustVerificationReward', RewardType, RewardAmount
+			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 		END
 
 		-- Deposit, Withdrawal
@@ -248,13 +261,15 @@ BEGIN
 		FROM (
 			SELECT c.UserName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
 				,CONVERT(VARCHAR(100),
-					CASE b.TransactionType
-						WHEN -1 THEN '3rd Add'
-						WHEN -2 THEN '3rd Minus'
-						WHEN 1 THEN 'Credit'
-						WHEN 2 THEN 'Debit'
-						WHEN 3 THEN 'Increase bonus'
-						WHEN 4 THEN 'Decrease bonus'
+					CASE
+						WHEN b.DataSource = 'AdjustmentInfo' AND b.TransactionType = 1 THEN 'Credit'
+						WHEN b.DataSource = 'AdjustmentInfo' AND b.TransactionType = 2 THEN 'Debit'
+						WHEN b.DataSource = 'AdjustmentInfo' AND b.TransactionType = 3 THEN 'Increase bonus'
+						WHEN b.DataSource = 'AdjustmentInfo' AND b.TransactionType = 4 THEN 'Decrease bonus'
+						WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.TransactionType = 1 THEN '3rd Add'
+						WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.TransactionType = 2 THEN '3rd Minus'
+						WHEN b.DataSource = 'CustVerificationReward' AND b.TransactionType = 1 THEN 'Phone'
+						WHEN b.DataSource = 'CustVerificationReward' AND b.TransactionType = 2 THEN 'Email'
 						END
 					) AS TransactionType
 			FROM dbo.Customer c WITH (NOLOCK)

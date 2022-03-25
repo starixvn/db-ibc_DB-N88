@@ -16,6 +16,7 @@ AS
 		- 20211118@Percy: Add DataSource: LogAdminAdjustWallet [RedmineID: #161048]
 		- 20211216@Percy: Add new type: Retention Free Bet [RedmineID: #166196]
 		- 20220311@Percy: Add new type: Manual Bonus [RedmineID: #169823]
+		- 20220325@Percy: Add new type: Verification Reward [RedmineID: #170390]
 */
 
 RETURN
@@ -30,5 +31,6 @@ RETURN
 		,(101, 101, 'Others', 'LogAdminAdjustWallet') -- Manual Adjustment
 		,(102, 102, 'Prize Draw', 'DrawLog')
 		,(103, 103, 'VIP Upgrade', 'VIPUpgradeReview')
+		,(104, 104, 'Verification Reward', 'CustVerificationReward')
 	) AS t (DBTypeId, BonusTypeId, BonusTypeName, DataSource)
 GO
