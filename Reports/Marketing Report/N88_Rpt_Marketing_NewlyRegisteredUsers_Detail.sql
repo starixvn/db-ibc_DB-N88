@@ -34,6 +34,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220214@Percy: Add @SortbyId = 0 for default sort  [RedmineID: #164724]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 
 	Param's Explanation:
 		@SortbyId:
@@ -197,6 +198,19 @@ BEGIN
 				AND SiteId = @SiteId
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 4 -- Settled
+			GROUP BY CustId
+
+			-- CustVerificationReward
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'CustVerificationReward'
+
+			INSERT INTO #BonusInfo (CustId, BonusCode)
+			SELECT CustId, @BonusTypeName
+			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @FDate AND @TDate
+				AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 			GROUP BY CustId
 		END
 

@@ -30,6 +30,7 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 */
 
 BEGIN
@@ -204,6 +205,27 @@ BEGIN
 			) v
 				INNER JOIN #Exchange e ON v.CurrencyId = e.ExchangeId AND v.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY v.CustId, v.CurrencyId
+
+			-- CustVerificationReward
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'CustVerificationReward'
+
+			INSERT INTO #BonusInfo (BonusCode, CustId, Currency, BonusAmount, BasedBonusAmount, IsCompared)
+			SELECT @BonusTypeName, r.CustId, r.CurrencyId, SUM(r.BonusAmount) AS BonusAmount, SUM(r.BonusAmount * e.Rate) AS BasedBonusAmount, @IsCompared
+			FROM (
+				SELECT r.CurrencyId, r.CustId, CONVERT(DATE, DATEADD(HOUR, -4, r.RewardTime)) AS ExchangeDate
+					,SUM(r.RewardAmount / CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END ) AS BonusAmount
+				FROM dbo.CustVerificationRewardDetail r WITH (NOLOCK)
+					INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
+				WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND r.RewardTime >= @FromDateTimeGMT AND r.RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND r.SiteId = @SiteId
+					AND c.IsTest = 0
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+				GROUP BY r.CurrencyId, r.CustId, CONVERT(DATE, DATEADD(HOUR, -4, r.RewardTime))
+			) r
+				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY r.CustId, r.CurrencyId
 
 			SELECT @i = @i + 1
 		END

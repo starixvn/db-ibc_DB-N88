@@ -30,6 +30,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220214@Percy: Add @SortbyId = 0 for default sort  [RedmineID: #164724]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 
 	Param's Explanation:
 		@SortbyId:
@@ -224,6 +225,24 @@ BEGIN
 					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 					AND Status = 4 -- Settled
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
+			) b
+				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY b.CustId
+
+			-- CustVerificationReward
+			SET @BonusTypeName = NULL
+			SELECT TOP 1 @BonusTypeName = BonusTypeName FROM @BonusType WHERE DataSource = 'CustVerificationReward'
+
+			INSERT INTO #BonusInfo (CustId, BonusCode, Amount)
+			SELECT b.CustId, @BonusTypeName, SUM(b.Amount * e.Rate)
+			FROM (
+				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate, SUM(RewardAmount) AS Amount
+				FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @FDate AND @TDate
+					AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
 			) b
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY b.CustId

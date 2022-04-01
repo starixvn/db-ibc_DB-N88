@@ -28,6 +28,7 @@ AS
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 
 	Param's Explanation:
 		@GroupBy
@@ -299,6 +300,35 @@ BEGIN
 			) v
 				INNER JOIN #Exchange e ON v.CurrencyId = e.ExchangeId AND v.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY v.Date, v.CustId
+		END
+
+		-- CustVerificationReward
+		SET @BonusTypeId = NULL
+		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'CustVerificationReward' AND IsSelected = 1
+		
+		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
+		BEGIN
+			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
+			SELECT c.Date, @BonusTypeName, @BonusTypeId, c.CustId, 'CustVerificationReward', SUM(c.BetCount), SUM(c.Amount * e.Rate)
+			FROM (
+				SELECT
+					CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime)) AS Date
+					,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate
+					,CustId, CurrencyId
+					,COUNT(1) AS BetCount
+					,SUM(RewardAmount) AS Amount
+				FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+					AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+					AND SiteId = @SiteId
+					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				GROUP BY
+					CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime))
+					,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
+					,CustId, CurrencyId
+			) c
+				INNER JOIN #Exchange e ON c.CurrencyId = e.ExchangeId AND c.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			GROUP BY c.Date, c.CustId
 		END
 
 		-- Deposit, Withdrawal

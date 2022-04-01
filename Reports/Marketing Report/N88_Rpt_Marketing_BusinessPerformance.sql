@@ -32,6 +32,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220214@Percy: Total Active Users base on Registration Date [RedmineID: #164724]
+		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -273,6 +274,15 @@ BEGIN
 				AND SiteId = @SiteId
 				AND Status = 4 -- Settled
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
+
+			-- CustVerificationReward
+			INSERT INTO #Bonus (CustId, CurrencyId, ExchangeDate, BonusAmount)
+			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate, SUM(RewardAmount) AS Amount
+			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND RewardTime >= @tmpFDateGMT AND RewardTime < @tmpTDateGMT
+				AND SiteId = @SiteId
+			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
 
 			SELECT @BonusAmountClaimeds = CASE WHEN @i = 1 THEN BonusAmountClaimeds ELSE @BonusAmountClaimeds END
 				,@CompareBonusAmountClaimeds = CASE WHEN @i = 2 THEN BonusAmountClaimeds ELSE @CompareBonusAmountClaimeds END
