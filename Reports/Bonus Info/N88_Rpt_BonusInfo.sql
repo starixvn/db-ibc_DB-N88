@@ -29,6 +29,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
+		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 
 	Param's Explanation:
 		@GroupBy
@@ -43,14 +44,14 @@ BEGIN
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
-	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, ActualRate FLOAT)
+	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MulipleBy FLOAT)
 
 	CREATE TABLE #BonusType (DBTypeId SMALLINT, BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), DataSource VARCHAR(100), IsSelected BIT)
 	CREATE TABLE #DepositInfo (Date DATE, CustId INT, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (Date DATE, CustId INT, Amount MONEY)
 	CREATE TABLE #BonusInfo (
-		Date DATE, BonusCode VARCHAR(50), BonusTypeId SMALLINT, DataSource VARCHAR(100), EventId INT, CustId INT, Status TINYINT, BetCount INT
-		,Amount MONEY, GGR MONEY DEFAULT (0), ProgressiveBet MONEY DEFAULT (0), ProgressiveWin MONEY DEFAULT (0)
+		Date DATE, BonusCode VARCHAR(100), BonusName VARCHAR(300), BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), StartTime DATETIME, EndTime DATETIME, PStatus TINYINT
+		,CustId INT, Status TINYINT, BetCount INT, Amount MONEY, GGR MONEY DEFAULT (0), ProgressiveBet MONEY DEFAULT (0), ProgressiveWin MONEY DEFAULT (0)
 	)
 
 	BEGIN
@@ -68,8 +69,8 @@ BEGIN
 
 		SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
 
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate, ActualRate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END, Rate
+		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate, MulipleBy)
+		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
@@ -77,16 +78,16 @@ BEGIN
 		SELECT  @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 		
-		-- BonusInfo
+		-- BonusInfo (include GGR)
 		IF EXISTS (SELECT 1 FROM #BonusType WHERE DataSource = 'BonusInfo' AND IsSelected = 1)
 		BEGIN
 			SET @BonusTypeIds = NULL
 			SELECT @BonusTypeIds = COALESCE(@BonusTypeIds + ',', '') + CONVERT(VARCHAR(10), DBTypeId)
 			FROM #BonusType WHERE DataSource = 'BonusInfo' AND DBTypeId <> 0
 
-			CREATE TABLE #TpBetRecord (BonusId INT, CustId INT, WinlostAmount MONEY, ProgressiveBet MONEY, ProgressiveWin MONEY)
-			INSERT INTO #TpBetRecord (BonusId, CustId, WinlostAmount, ProgressiveBet, ProgressiveWin)
-			SELECT t.BonusId, t.CustId, SUM(t.WinlostAmount * e.ActualRate), SUM(t.ProgressiveBet * e.ActualRate), SUM(t.ProgressiveWin * e.ActualRate)
+			CREATE TABLE #N88_SumWinloss (BonusId INT, CustId INT, WinlostAmount MONEY, ProgressiveBet MONEY, ProgressiveWin MONEY)
+			INSERT INTO #N88_SumWinloss (BonusId, CustId, WinlostAmount, ProgressiveBet, ProgressiveWin)
+			SELECT t.BonusId, t.CustId, SUM(t.WinlostAmount * e.Rate), SUM(t.ProgressiveBet * e.Rate), SUM(t.ProgressiveWin * e.Rate)
 			FROM (
 				SELECT BonusId, CustId, Currency, CONVERT(DATE, DATEADD(HOUR, -4, SettledTime)) AS ExchangeDate -- GMT-4
 					,SUM(CASE
@@ -105,10 +106,11 @@ BEGIN
 			) t
 				INNER JOIN #Exchange e ON t.Currency = e.ExchangeId AND t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY t.BonusId, t.CustId
-
-			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, Status, DataSource, BetCount, Amount, GGR, ProgressiveBet, ProgressiveWin)
-			SELECT b.Date, b.BonusCode, bt.BonusTypeId, b.CustId, b.Status, 'BonusInfo'
-				, SUM(b.BetCount), SUM(b.Amount * e.Rate), SUM(b.GGR), SUM(b.ProgressiveBet), SUM(b.ProgressiveWin)
+			
+			INSERT INTO #BonusInfo (Date, BonusCode, BonusName, BonusTypeId, BonusTypeName, StartTime, EndTime, PStatus, CustId, Status
+				,BetCount, Amount, GGR, ProgressiveBet, ProgressiveWin)
+			SELECT b.Date, b.BonusCode, p.Description AS BonusName, bt.BonusTypeId, bt.BonusTypeName, DATEADD(HOUR, @TimeZone, p.StartDate), DATEADD(HOUR, @TimeZone, p.EndDate), p.Status, b.CustId, b.Status
+				,SUM(b.BetCount), SUM(b.Amount * e.Rate / e.MulipleBy), SUM(b.GGR), SUM(b.ProgressiveBet), SUM(b.ProgressiveWin)
 			FROM (
 				SELECT
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime)) AS Date
@@ -120,7 +122,7 @@ BEGIN
 				FROM dbo.BonusInfo b WITH (NOLOCK)
 					OUTER APPLY (
 						SELECT SUM(tb.WinlostAmount) AS WinlostAmount, SUM(tb.ProgressiveBet) AS ProgressiveBet, SUM(tb.ProgressiveWin) AS ProgressiveWin
-						FROM #TpBetRecord tb
+						FROM #N88_SumWinloss tb
 						WHERE b.CustId = tb.CustId AND b.BonusId = tb.BonusId
 					) tb
 				WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
@@ -135,206 +137,51 @@ BEGIN
 					,CONVERT(SMALLINT, CASE WHEN ',' + @BonusTypeIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.PromotionType) + ',%' THEN b.PromotionType ELSE 0 END)
 				UNION SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL -- run this query first
 			) b
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0
 				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 				INNER JOIN #BonusType bt ON b.DBTypeId = bt.DBTypeId AND bt.DataSource = 'BonusInfo' AND bt.IsSelected = 1
-			GROUP BY b.Date, b.BonusCode, bt.BonusTypeId, b.CustId, b.Status
+				INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
+			WHERE ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(5), p.Status) + ',%'
+			GROUP BY b.Date, b.BonusCode, p.Description, bt.BonusTypeId, bt.BonusTypeName, DATEADD(HOUR, @TimeZone, p.StartDate), DATEADD(HOUR, @TimeZone, p.EndDate), p.Status, b.CustId, b.Status
 
-			DROP TABLE #TpBetRecord
-		END
-		
-		-- RebateMLog
-		IF EXISTS (SELECT 1 FROM #BonusType WHERE DataSource = 'RebateMLog' AND IsSelected = 1)
-		BEGIN
-			SET @BonusTypeIds = NULL
-			SELECT @BonusTypeIds = COALESCE(@BonusTypeIds + ',', '') + CONVERT(VARCHAR(10), DBTypeId)
-			FROM #BonusType WHERE DataSource = 'RebateMLog' AND DBTypeId <> 0
-			
-			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
-			SELECT r.Date, r.BonusCode, bt.BonusTypeId, r.CustId, 'RebateMLog', SUM(r.BetCount), SUM(r.Amount * e.Rate)
-			FROM (
-				SELECT
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
-					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-					,BonusCode, CustId, CurrencyId
-					,CONVERT(SMALLINT, CASE WHEN ',' + @BonusTypeIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), RebateType) + ',%' THEN RebateType ELSE 0 END) AS DBTypeId
-					,COUNT(1) AS BetCount, SUM(RedeemAmount) AS Amount
-				FROM dbo.RebateMLog WITH (NOLOCK)
-				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				GROUP BY
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
-					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-					,BonusCode, CustId, CurrencyId
-					,CONVERT(SMALLINT, CASE WHEN ',' + @BonusTypeIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), RebateType) + ',%' THEN RebateType ELSE 0 END)
-				UNION SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL -- run this query first
-			) r
-				INNER JOIN #BonusType bt ON r.DBTypeId = bt.DBTypeId AND bt.DataSource = 'RebateMLog' AND bt.IsSelected = 1
-				INNER JOIN #Exchange e ON r.CurrencyId = e.ExchangeId AND r.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY r.Date, r.BonusCode, bt.BonusTypeId, r.CustId
+			DROP TABLE #N88_SumWinloss
 		END
 
-		-- DrawLog
-		SET @BonusTypeId = NULL
-		SELECT TOP 1 @BonusTypeId = BonusTypeId FROM #BonusType WHERE DataSource = 'DrawLog' AND IsSelected = 1
-		
-		IF @BonusTypeId IS NOT NULL
+		-- Other Bonus
+		IF EXISTS (SELECT 1 FROM #BonusType WHERE DataSource <> 'BonusInfo' AND IsSelected = 1)
 		BEGIN
-			INSERT INTO #BonusInfo (Date, EventId, BonusTypeId, CustId, DataSource, BetCount, Amount)
-			SELECT d.Date, d.EventId, @BonusTypeId, d.CustId, 'DrawLog', SUM(d.BetCount), SUM(d.Amount * e.Rate)
-			FROM (
-				SELECT
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, DrawTime)) AS Date
-					,CONVERT(DATE, DATEADD(HOUR, -4, DrawTime)) AS ExchangeDate
-					,CustId, CurrencyId, EventId
-					,COUNT(1) AS BetCount
-					,SUM(Amount) AS Amount
-				FROM dbo.DrawLog WITH (NOLOCK)
-				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND DrawTime >= @FromDateTimeGMT AND DrawTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				GROUP BY
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, DrawTime))
-					,CONVERT(DATE, DATEADD(HOUR, -4, DrawTime))
-					,CustId, CurrencyId, EventId
-			) d
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY d.Date, d.EventId, d.CustId
-		END
+			CREATE TABLE #tmpBonus (BonusDate DATE, DataSource VARCHAR(128), BonusType SMALLINT, BonusCode VARCHAR(100), BonusName VARCHAR(300), BonusStatus TINYINT, CustId INT, CurrencyId INT, BetCount INT, BonusAmount MONEY, BasedBonusAmount MONEY)
+			INSERT INTO #tmpBonus (BonusDate, DataSource, BonusType, BonusCode, BonusName, BonusStatus, CustId, CurrencyId, BetCount, BonusAmount, BasedBonusAmount)
+			EXEC dbo.N88_CustBonusSummary_Sel
+				@SiteId = @SiteId
+				,@FromDate = @FromDate
+				,@ToDate = @ToDate
+				,@CurrencyIds = @CurrencyIds
+				,@DisplayCurrency = @DisplayCurrency
+				,@TimeZone = @TimeZone
+				,@GetByDate = 1
 
-		-- AdjustmentInfo
-		SET @BonusTypeId = NULL
-		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'AdjustmentInfo' AND IsSelected = 1
-		
-		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
-		BEGIN
-			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
-			SELECT a.Date, @BonusTypeName, @BonusTypeId, a.CustId, 'AdjustmentInfo', SUM(a.BetCount), SUM(a.Amount * e.Rate)
-			FROM (
-				SELECT
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
-					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-					,CustId, CurrencyId
-					,COUNT(1) AS BetCount
-					,SUM(Amount * CASE
-									WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
-									WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
-									ELSE 0 END) AS Amount
-				FROM dbo.AdjustmentInfo WITH (NOLOCK)
-				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-					AND Status = 2 -- Approved
-					AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
-				GROUP BY
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
-					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-					,CustId, CurrencyId
-			) a
-				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY a.Date, a.CustId
-		END
+			INSERT INTO #BonusInfo (Date, BonusCode, BonusName, BonusTypeId, BonusTypeName, StartTime, EndTime, PStatus, CustId, BetCount, Amount)
+			SELECT b.BonusDate, b.BonusCode, ISNULL(e.EventName, p.Description), bt.BonusTypeId, bt.BonusTypeName, DATEADD(HOUR, @TimeZone, ISNULL(e.StartTime, p.StartDate)), DATEADD(HOUR, @TimeZone, ISNULL(e.EndTime, p.EndDate)), p.Status, b.CustId, SUM(b.BetCount), SUM(b.BasedBonusAmount)
+			FROM #tmpBonus b
+				INNER JOIN #BonusType bt ON ISNULL(b.BonusType, 0) = bt.DBTypeId AND b.DataSource = bt.DataSource AND bt.IsSelected = 1
+				LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND b.DataSource = 'RebateMLog' AND ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(5), p.Status) + ',%'
+				LEFT JOIN dbo.EventDraw e WITH (NOLOCK) ON b.DataSource = 'DrawLog' AND b.BonusName = e.EventName AND e.SiteId = @SiteId
+			WHERE (
+				b.DataSource NOT IN ('BonusInfo', 'RebateMLog', 'DrawLog')
+				OR (b.DataSource = 'RebateMLog' AND b.BonusCode = 'VipRebate') -- VIP Rebate
+				OR p.BonusCode IS NOT NULL
+				OR e.EventName IS NOT NULL
+			)
+			GROUP BY b.BonusDate, b.BonusCode, ISNULL(e.EventName, p.Description), bt.BonusTypeId, bt.BonusTypeName, DATEADD(HOUR, @TimeZone, ISNULL(e.StartTime, p.StartDate)), DATEADD(HOUR, @TimeZone, ISNULL(e.EndTime, p.EndDate)), p.Status, b.CustId
 
-		-- LogAdminAdjustWallet
-		SET @BonusTypeId = NULL
-		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'LogAdminAdjustWallet' AND IsSelected = 1
-		
-		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
-		BEGIN
-			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
-			SELECT a.Date, @BonusTypeName, @BonusTypeId, a.CustId, 'LogAdminAdjustWallet', SUM(a.BetCount), SUM(a.Amount * e.Rate)
-			FROM (
-				SELECT
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
-					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-					,CustId, CurrencyId
-					,COUNT(1) AS BetCount
-					,SUM(Amount * CASE
-									WHEN Direction = 1 THEN 1 -- 3rd Add
-									WHEN Direction = 2 THEN -1 -- 3rd Minus
-									ELSE 0 END) AS Amount
-				FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
-				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-					AND Status = 0 -- Success
-					AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
-				GROUP BY
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
-					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-					,CustId, CurrencyId
-			) a
-				INNER JOIN #Exchange e ON a.CurrencyId = e.ExchangeId AND a.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY a.Date, a.CustId
-		END
-
-		-- VIPUpgradeReview
-		SET @BonusTypeId = NULL
-		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'VIPUpgradeReview' AND IsSelected = 1
-		
-		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
-		BEGIN
-			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
-			SELECT v.Date, @BonusTypeName, @BonusTypeId, v.CustId, 'VIPUpgradeReview', SUM(v.BetCount), SUM(v.Amount * e.Rate)
-			FROM (
-				SELECT
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)) AS Date
-					,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime)) AS ExchangeDate
-					,CustId, CurrencyId
-					,COUNT(1) AS BetCount
-					,SUM(UpgradeAmount) AS Amount
-				FROM dbo.VipUpgradeReview WITH (NOLOCK)
-				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND SettleTime >= @FromDateTimeGMT AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-					AND Status = 4 -- Settled
-				GROUP BY
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime))
-					,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
-					,CustId, CurrencyId
-			) v
-				INNER JOIN #Exchange e ON v.CurrencyId = e.ExchangeId AND v.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY v.Date, v.CustId
-		END
-
-		-- CustVerificationReward
-		SET @BonusTypeId = NULL
-		SELECT TOP 1 @BonusTypeId = BonusTypeId, @BonusTypeName = BonusTypeName FROM #BonusType WHERE DataSource = 'CustVerificationReward' AND IsSelected = 1
-		
-		IF @BonusName = '' OR @BonusTypeId IS NOT NULL
-		BEGIN
-			INSERT INTO #BonusInfo (Date, BonusCode, BonusTypeId, CustId, DataSource, BetCount, Amount)
-			SELECT c.Date, @BonusTypeName, @BonusTypeId, c.CustId, 'CustVerificationReward', SUM(c.BetCount), SUM(c.Amount * e.Rate)
-			FROM (
-				SELECT
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime)) AS Date
-					,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate
-					,CustId, CurrencyId
-					,COUNT(1) AS BetCount
-					,SUM(RewardAmount) AS Amount
-				FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
-				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-					AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				GROUP BY
-					CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime))
-					,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
-					,CustId, CurrencyId
-			) c
-				INNER JOIN #Exchange e ON c.CurrencyId = e.ExchangeId AND c.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY c.Date, c.CustId
+			DROP TABLE #tmpBonus
 		END
 
 		-- Deposit, Withdrawal
 		BEGIN
 			INSERT INTO #DepositInfo (Date, CustId, Amount)
-			SELECT CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE d.Date END, d.CustId, SUM(d.Amount * e.Rate)
+			SELECT CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE d.Date END, d.CustId, SUM(d.Amount * e.Rate / e.MulipleBy)
 			FROM (
 				SELECT
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
@@ -357,7 +204,7 @@ BEGIN
 			GROUP BY CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE d.Date END, d.CustId
 
 			INSERT INTO #WithdrawalInfo (Date, CustId, Amount)
-			SELECT CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE w.Date END, w.CustId, SUM(w.Amount * e.Rate)
+			SELECT CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE w.Date END, w.CustId, SUM(w.Amount * e.Rate / e.MulipleBy)
 			FROM (
 				SELECT
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
@@ -391,12 +238,7 @@ BEGIN
 			CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, BonusStatus, StartDate, EndDate, Date
 			,Running, Canceled, Fulfill, OtherPlatform, Amount, GGR, ProgressiveBet, ProgressiveWin
 		)
-		SELECT b.CustId
-			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE b.BonusCode END AS BonusCode
-			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE p.Description END AS BonusName
-			,b.BonusTypeId, bt.BonusTypeName, p.Status
-			,DATEADD(HOUR, @TimeZone, ISNULL(p.StartDate, e.StartTime))
-			,DATEADD(HOUR, @TimeZone, ISNULL(p.EndDate, e.EndTime))
+		SELECT b.CustId, b.BonusCode, b.BonusName, b.BonusTypeId, b.BonusTypeName, b.PStatus, b.StartTime, b.EndTime
 			,CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE b.Date END AS Date
 			,SUM(CASE WHEN b.Status = 1 THEN b.BetCount ELSE 0 END) AS Running
 			,SUM(CASE WHEN b.Status = 2 THEN b.BetCount ELSE 0 END) AS Canceled
@@ -407,34 +249,12 @@ BEGIN
 			,SUM(b.ProgressiveBet) AS ProgressiveBet
 			,SUM(b.ProgressiveWin) AS ProgressiveWin
 		FROM #BonusInfo b
-			INNER JOIN #BonusType bt ON b.BonusTypeId = bt.BonusTypeId AND b.DataSource = bt.DataSource AND bt.IsSelected = 1
-			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
-			LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId
-														AND (
-															@BonusName = ''
-															OR CHARINDEX(@BonusName, p.Description, 1) > 0
-															OR CHARINDEX(@BonusName, p.BonusCode, 1) > 0
-														)
-														AND b.EventId IS NULL
-			LEFT JOIN dbo.EventDraw e WITH (NOLOCK) ON b.EventId = e.EventId AND e.SiteId = @SiteId
-														AND (
-															@BonusName = ''
-															OR CHARINDEX(@BonusName, e.EventName, 1) > 0
-														)
-		WHERE c.IsTest = 0
-			AND (
+		WHERE (
 				@BonusName = ''
 				OR CHARINDEX(@BonusName, b.BonusCode, 1) > 0
-				OR p.BonusCode IS NOT NULL
-				OR e.EventId IS NOT NULL
+				OR CHARINDEX(@BonusName, b.BonusName, 1) > 0
 			)
-			AND (p.Status IS NULL OR ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), p.Status) + ',%')
-		GROUP BY b.CustId
-			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE b.BonusCode END
-			,CASE WHEN b.EventId IS NOT NULL THEN e.EventName ELSE p.Description END
-			,b.BonusTypeId, bt.BonusTypeName, p.Status
-			,DATEADD(HOUR, @TimeZone, ISNULL(p.StartDate, e.StartTime))
-			,DATEADD(HOUR, @TimeZone, ISNULL(p.EndDate, e.EndTime))
+		GROUP BY b.CustId, b.BonusCode, b.BonusName, b.BonusTypeId, b.BonusTypeName, b.PStatus, b.StartTime, b.EndTime
 			,CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE b.Date END
 
 		DELETE #DepositInfo WHERE CustId NOT IN (SELECT CustId FROM #tmpResult)
