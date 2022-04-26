@@ -30,7 +30,7 @@ BEGIN
 			,@ToDateTimeGMT0 = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
 	-- Get Exchange
-	DECLARE @tmpFDate DATE = @FromDateTimeGMT0, @tmpTDate DATE = @ToDateTimeGMT0
+	DECLARE @tmpFDate DATE = DATEADD(DAY, -1, @FromDate), @tmpTDate DATE = DATEADD(DAY, 1, @ToDate)
 	
 	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
 	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
