@@ -24,6 +24,7 @@ AS
 		- 20210423@Sol: Initial sp - Add player detail section - [Redmine:#139333]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
+		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 
 	Param's Explanation:
 		@SortbyId:
@@ -72,6 +73,7 @@ BEGIN
 		,Winloss					MONEY
 		,ProgressiveWin				MONEY
 		,ProgressiveBet				MONEY
+		,Commission					MONEY
 		,BasedTurnOver				MONEY
 		,BasedNetTurnOver			MONEY
 		,BasedNetTurnOverForMargin	MONEY
@@ -81,11 +83,12 @@ BEGIN
 		,BasedWinloss				MONEY
 		,BasedProgressiveWin		MONEY
 		,BasedProgressiveBet		MONEY
+		,BasedCommission			MONEY
 	)
 
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (GameType)
 
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
@@ -96,8 +99,8 @@ BEGIN
 	---- by winlostdate
 	IF (@FilterBy = 1)
 	BEGIN
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate
+		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
 		WHERE e.ExchangeId = @CurrencyId
 
@@ -154,6 +157,29 @@ BEGIN
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
 		GROUP BY GameType
+
+		-- Get commission for 9W (filter by winlostdate only)
+		IF EXISTS (SELECT 1 FROM #__N88_SumWinloss WHERE GameType = 51)
+		BEGIN
+			DECLARE @FromDateTimeGMT8 DATETIME, @ToDateTimeGMT8 DATETIME -- data on GMT+8
+			SELECT  @FromDateTimeGMT8		= DATEADD(HOUR, 8 - @TimeZone, CONVERT(DATETIME, @FromDate))
+					,@ToDateTimeGMT8		= DATEADD(HOUR, 8 - @TimeZone, CONVERT(DATETIME, @ToDate))
+
+			DECLARE @Commission MONEY, @BasedCommission MONEY
+			SELECT  @Commission = SUM(t.Commission / e.MultipleBy), @BasedCommission = SUM(t.Commission * e.Rate / e.MultipleBy)
+			FROM (
+				SELECT CustId, CurrencyId, DATEADD(HOUR, -12, settledDate) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
+				FROM dbo.TpReport9W WITH (NOLOCK)
+				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
+				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
+			) t
+				INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.ExchangeId
+
+			UPDATE t
+			SET t.Commission = -@Commission, t.BasedCommission = -@BasedCommission, t.Revenue = -@Commission, t.BasedRevenue = -@BasedCommission
+			FROM #__N88_SumWinloss t
+			WHERE t.GameType = 51
+		END
 	END
 	---- by transdate
 	ELSE 
@@ -163,8 +189,8 @@ BEGIN
 
 		SELECT @MinDate = DATEADD(DAY, -1, @MinDate), @MaxDate = DATEADD(DAY, 1, @MaxDate)
 
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate
+		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
 		WHERE e.ExchangeId = @CurrencyId
 
@@ -251,6 +277,8 @@ BEGIN
 		,BasedProgressiveWin		MONEY
 		,ProgressiveBet				MONEY
 		,BasedProgressiveBet		MONEY
+		,Commission					MONEY
+		,BasedCommission			MONEY
 		,BetCount					INT
 		,AvgBetAmount				MONEY
 		,BasedAvgBetAmount			MONEY
@@ -282,6 +310,8 @@ BEGIN
 			,BasedProgressiveWin
 			,ProgressiveBet
 			,BasedProgressiveBet
+			,Commission
+			,BasedCommission
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -309,6 +339,8 @@ BEGIN
 			,SUM(BasedProgressiveWin)
 			,SUM(ProgressiveBet)
 			,SUM(BasedProgressiveBet)
+			,SUM(Commission)
+			,SUM(BasedCommission)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -340,6 +372,8 @@ BEGIN
 		,BasedProgressiveWin
 		,ProgressiveBet
 		,BasedProgressiveBet
+		,Commission
+		,BasedCommission
 		,BetCount
 		,AvgBetAmount
 		,BasedAvgBetAmount

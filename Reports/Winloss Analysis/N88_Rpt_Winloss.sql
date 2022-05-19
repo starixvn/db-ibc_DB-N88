@@ -51,6 +51,7 @@ AS
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
+		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 
 	Param's Explanation:
 		@SortbyId:
@@ -61,16 +62,17 @@ AS
 			.  5 = Player Win Loss
 			.  6 = Progressive Win
 			.  7 = Progressive Bet
-			.  8 = BetCount
-			.  9 = Avg Bet Amount
-			. 10 = Unique Players
-			. 11 = Margin
-			. 12 = Closing Balance
-			. 13 = No. Deposit
-			. 14 = Total Deposit Amount
-			. 15 = No. Withdrawal
-			. 16 = Total Withdrawal Amount
-			. 17 = Total Bonus Amount
+			.  8 = Commission
+			.  9 = BetCount
+			. 10 = Avg Bet Amount
+			. 11 = Unique Players
+			. 12 = Margin
+			. 13 = Closing Balance
+			. 14 = No. Deposit
+			. 15 = Total Deposit Amount
+			. 16 = No. Withdrawal
+			. 17 = Total Withdrawal Amount
+			. 18 = Total Bonus Amount
 */
 
 BEGIN
@@ -108,6 +110,7 @@ BEGIN
 		,Winloss					MONEY
 		,ProgressiveWin				MONEY
 		,ProgressiveBet				MONEY
+		,Commission					MONEY
 		,BasedTurnOver				MONEY
 		,BasedNetTurnOver			MONEY
 		,BasedNetTurnOverForMargin	MONEY
@@ -117,6 +120,7 @@ BEGIN
 		,BasedWinloss				MONEY
 		,BasedProgressiveWin		MONEY
 		,BasedProgressiveBet		MONEY
+		,BasedCommission			MONEY
 		,NumberOfDeposit			INT
 		,DepositAmount				MONEY
 		,BasedDepositAmount			MONEY
@@ -206,6 +210,34 @@ BEGIN
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
 		GROUP BY rptDate, GameType, CustId, Currency
+
+		-- Get commission for 9W (filter by winlostdate only)
+		IF ',' + @ProductIds + ',' LIKE '%,51,%'
+		BEGIN
+			DECLARE @FromDateTimeGMT8 DATETIME, @ToDateTimeGMT8 DATETIME -- data on GMT+8
+			SELECT  @FromDateTimeGMT8		= DATEADD(HOUR, 8 - @TimeZone, CONVERT(DATETIME, @FromDate))
+					,@ToDateTimeGMT8		= DATEADD(HOUR, 8 - @TimeZone, CONVERT(DATETIME, @ToDate))
+			
+			CREATE TABLE #__9W (CustId INT, rptDate DATE, Commission MONEY, BasedCommission MONEY)
+			INSERT INTO #__9W (CustId, rptDate, Commission, BasedCommission)
+			SELECT t.CustId, t.rptDate, SUM(t.Commission / e.MultipleBy), SUM(t.Commission * e.Rate / e.MultipleBy)
+			FROM (
+				SELECT CustId, CurrencyId, DATEADD(HOUR, -12, settledDate) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
+				FROM dbo.TpReport9W WITH (NOLOCK)
+				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
+				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
+			) t
+				INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.ExchangeId
+			GROUP BY t.CustId, t.rptDate
+
+			UPDATE t
+			SET t.Commission = -w.Commission, t.BasedCommission = -w.BasedCommission, t.Revenue = -w.Commission, t.BasedRevenue = -w.BasedCommission
+			FROM #__N88_SumWinloss t
+				INNER JOIN #__9W w ON t.CustId = w.CustId AND t.rptDate = w.rptDate
+			WHERE @GroupBy <> 3 OR t.GameType = 51 -- @GroupBy = 3 not group by GameType (GameType is null)
+
+			DROP TABLE #__9W
+		END
 	END
 	---- by transdate
 	ELSE 
@@ -428,6 +460,8 @@ BEGIN
 		,ProgressiveBet				MONEY
 		,BasedProgressiveWin		MONEY
 		,BasedProgressiveBet		MONEY
+		,Commission					MONEY
+		,BasedCommission			MONEY
 		,BetCount					INT
 		,AvgBetAmount				MONEY
 		,BasedAvgBetAmount			MONEY
@@ -469,6 +503,8 @@ BEGIN
 			,ProgressiveBet
 			,BasedProgressiveWin
 			,BasedProgressiveBet
+			,Commission
+			,BasedCommission
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -506,6 +542,8 @@ BEGIN
 			,SUM(ProgressiveBet)
 			,SUM(BasedProgressiveWin)
 			,SUM(BasedProgressiveBet)
+			,SUM(Commission)
+			,SUM(BasedCommission)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -551,6 +589,8 @@ BEGIN
 			,ProgressiveBet
 			,BasedProgressiveWin
 			,BasedProgressiveBet
+			,Commission
+			,BasedCommission
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -577,6 +617,8 @@ BEGIN
 			,SUM(ProgressiveBet)
 			,SUM(BasedProgressiveWin)
 			,SUM(BasedProgressiveBet)
+			,SUM(Commission)
+			,SUM(BasedCommission)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -612,6 +654,8 @@ BEGIN
 			,ProgressiveBet
 			,BasedProgressiveWin
 			,BasedProgressiveBet
+			,Commission
+			,BasedCommission
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -646,6 +690,8 @@ BEGIN
 			,SUM(ProgressiveBet)
 			,SUM(BasedProgressiveWin)
 			,SUM(BasedProgressiveBet)
+			,SUM(Commission)
+			,SUM(BasedCommission)
 			,SUM(BetCount)
 			,CAST(ISNULL(SUM(NetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS AvgBetAmount
 			,CAST(ISNULL(SUM(BasedNetTurnOver)/NULLIF(SUM(BetCount),0),0) AS MONEY) AS BasedAvgBetAmount
@@ -685,6 +731,8 @@ BEGIN
 				,ProgressiveBet = SUM(ProgressiveBet)
 				,BasedProgressiveWin = SUM(BasedProgressiveWin)
 				,BasedProgressiveBet = SUM(BasedProgressiveBet)
+				,Commission = SUM(Commission)
+				,BasedCommission = SUM(BasedCommission)
 				,BetCount = SUM(BetCount)
 				,NumberOfDeposit = SUM(NumberOfDeposit)	
 				,DepositAmount = SUM(DepositAmount)
@@ -722,6 +770,8 @@ BEGIN
 			,ProgressiveBet
 			,BasedProgressiveWin
 			,BasedProgressiveBet
+			,Commission
+			,BasedCommission
 			,BetCount
 			,AvgBetAmount
 			,BasedAvgBetAmount
@@ -761,6 +811,8 @@ BEGIN
 			,r.ProgressiveBet
 			,r.BasedProgressiveWin
 			,r.BasedProgressiveBet
+			,r.Commission
+			,r.BasedCommission
 			,r.BetCount
 			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE NetTurnOver/BetCount END
 			,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE BasedNetTurnOver/BetCount END
@@ -809,6 +861,8 @@ BEGIN
 		,ProgressiveBet				MONEY
 		,BasedProgressiveWin		MONEY
 		,BasedProgressiveBet		MONEY
+		,Commission					MONEY
+		,BasedCommission			MONEY
 		,BetCount					INT
 		,AvgBetAmount				MONEY
 		,BasedAvgBetAmount			MONEY
@@ -854,6 +908,8 @@ BEGIN
 		,ProgressiveBet
 		,BasedProgressiveWin
 		,BasedProgressiveBet
+		,Commission
+		,BasedCommission
 		,BetCount
 		,AvgBetAmount
 		,BasedAvgBetAmount
@@ -894,6 +950,8 @@ BEGIN
 		,ISNULL(ProgressiveBet, 0)
 		,ISNULL(BasedProgressiveWin, 0)
 		,ISNULL(BasedProgressiveBet, 0)
+		,ISNULL(Commission, 0)
+		,ISNULL(BasedCommission, 0)
 		,ISNULL(BetCount, 0)
 		,AvgBetAmount
 		,BasedAvgBetAmount
@@ -931,26 +989,28 @@ BEGIN
 					,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN BasedProgressiveWin END DESC
 					,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN BasedProgressiveBet END ASC
 					,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN BasedProgressiveBet END DESC
-					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN BetCount END ASC
-					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN BetCount END DESC
-					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 1 THEN BasedAvgBetAmount END ASC
-					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 0 THEN BasedAvgBetAmount END DESC
-					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN UniquePlayers END ASC
-					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN UniquePlayers END DESC
-					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN Margin END ASC
-					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN Margin END DESC
-					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN BasedClosingBalance END ASC
-					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN BasedClosingBalance END DESC
-					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN NumberOfDeposit END ASC
-					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN NumberOfDeposit END DESC
-					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 1 THEN BasedDepositAmount END ASC
-					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 0 THEN BasedDepositAmount END DESC
-					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
-					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
-					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
-					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC
-					,CASE WHEN @SortbyId = 17 AND @IsSortAsc = 1 THEN BasedBonusAmount END ASC
-					,CASE WHEN @SortbyId = 17 AND @IsSortAsc = 0 THEN BasedBonusAmount END DESC) AS RowNumber
+					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN BasedCommission END ASC
+					,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN BasedCommission END DESC
+					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 1 THEN BetCount END ASC
+					,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 0 THEN BetCount END DESC
+					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN BasedAvgBetAmount END ASC
+					,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN BasedAvgBetAmount END DESC
+					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN UniquePlayers END ASC
+					,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN UniquePlayers END DESC
+					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN Margin END ASC
+					,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN Margin END DESC
+					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN BasedClosingBalance END ASC
+					,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN BasedClosingBalance END DESC
+					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 1 THEN NumberOfDeposit END ASC
+					,CASE WHEN @SortbyId = 14 AND @IsSortAsc = 0 THEN NumberOfDeposit END DESC
+					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 1 THEN BasedDepositAmount END ASC
+					,CASE WHEN @SortbyId = 15 AND @IsSortAsc = 0 THEN BasedDepositAmount END DESC
+					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 1 THEN NumberOfWithdrawal END ASC
+					,CASE WHEN @SortbyId = 16 AND @IsSortAsc = 0 THEN NumberOfWithdrawal END DESC
+					,CASE WHEN @SortbyId = 17 AND @IsSortAsc = 1 THEN BasedWithdrawalAmount END ASC
+					,CASE WHEN @SortbyId = 17 AND @IsSortAsc = 0 THEN BasedWithdrawalAmount END DESC
+					,CASE WHEN @SortbyId = 18 AND @IsSortAsc = 1 THEN BasedBonusAmount END ASC
+					,CASE WHEN @SortbyId = 18 AND @IsSortAsc = 0 THEN BasedBonusAmount END DESC) AS RowNumber
 			FROM (
 				SELECT GroupId
 					,SUM(BasedTurnover) AS BasedTurnover
@@ -959,6 +1019,7 @@ BEGIN
 					,SUM(BasedPlayerWinloss) AS BasedPlayerWinloss
 					,SUM(BasedProgressiveWin) AS BasedProgressiveWin
 					,SUM(BasedProgressiveBet) AS BasedProgressiveBet
+					,SUM(BasedCommission) AS BasedCommission
 					,SUM(BetCount) AS BetCount
 					,ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS BasedAvgBetAmount
 					,SUM(UniquePlayers) AS UniquePlayers
@@ -1003,6 +1064,8 @@ BEGIN
 		,ProgressiveBet
 		,BasedProgressiveWin
 		,BasedProgressiveBet
+		,Commission
+		,BasedCommission
 		,BetCount
 		,AvgBetAmount
 		,BasedAvgBetAmount
@@ -1032,6 +1095,7 @@ BEGIN
 		,CAST(SUM(BasedWinloss) AS MONEY) AS TotalBasedPlayerWinloss
 		,CAST(SUM(BasedProgressiveWin) AS MONEY) AS TotalBasedProgressiveWin
 		,CAST(SUM(BasedProgressiveBet) AS MONEY) AS TotalBasedProgressiveBet
+		,CAST(SUM(BasedCommission) AS MONEY) AS TotalBasedCommission
 		,SUM(BetCount) AS TotalBetCount
 		,CAST(ISNULL(SUM(BasedNetTurnover)/NULLIF(SUM(BetCount), 0), 0) AS MONEY) AS TotalBasedAvgBetAmount
 		,COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN s.CustId ELSE NULL END)) AS TotalUniquePlayers

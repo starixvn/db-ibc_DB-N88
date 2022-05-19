@@ -29,6 +29,7 @@ AS
 		- 20210305@Percy: Initialize [Redmine:#151187]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
+		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 */
 
 BEGIN
@@ -64,6 +65,7 @@ BEGIN
 		,Winloss					MONEY
 		,ProgressiveWin				MONEY
 		,ProgressiveBet				MONEY
+		,Commission					MONEY
 		,NumberOfDeposit			INT
 		,DepositAmount				MONEY
 		,NumberOfWithdrawal			INT
@@ -72,7 +74,7 @@ BEGIN
 	)
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (CustId)
 
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
@@ -83,8 +85,8 @@ BEGIN
 	---- by winlostdate
 	IF (@FilterBy = 1)
 	BEGIN
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END
+		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
@@ -143,6 +145,34 @@ BEGIN
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
 		GROUP BY rptDate, GameType, CustId, Currency
+
+		-- Get commission for 9W (filter by winlostdate only)
+		IF EXISTS (SELECT 1 FROM #__N88_SumWinloss WHERE GameType = 51)
+		BEGIN
+			DECLARE @FromDateTimeGMT8 DATETIME, @ToDateTimeGMT8 DATETIME -- data on GMT+8
+			SELECT  @FromDateTimeGMT8		= DATEADD(HOUR, 8 - @TimeZone, CONVERT(DATETIME, @FromDate))
+					,@ToDateTimeGMT8		= DATEADD(HOUR, 8 - @TimeZone, CONVERT(DATETIME, @ToDate))
+			
+			CREATE TABLE #__9W (CustId INT, rptDate DATE, Commission MONEY, BasedCommission MONEY)
+			INSERT INTO #__9W (CustId, rptDate, Commission, BasedCommission)
+			SELECT t.CustId, t.rptDate, SUM(t.Commission / e.MultipleBy), SUM(t.Commission * e.Rate / e.MultipleBy)
+			FROM (
+				SELECT CustId, CurrencyId, DATEADD(HOUR, -12, settledDate) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
+				FROM dbo.TpReport9W WITH (NOLOCK)
+				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
+				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
+			) t
+				INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.ExchangeId
+			GROUP BY t.CustId, t.rptDate
+
+			UPDATE t
+			SET t.Commission = -w.Commission, t.Revenue = -w.Commission
+			FROM #__N88_SumWinloss t
+				INNER JOIN #__9W w ON t.CustId = w.CustId AND t.rptDate = w.rptDate
+			WHERE t.GameType = 51
+
+			DROP TABLE #__9W
+		END
 	END
 	---- by transdate
 	ELSE 
@@ -216,8 +246,8 @@ BEGIN
 
 	-- Reset Exchange
 	DELETE #__Exchange
-	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-	SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END
+	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
+	SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
 	WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 	
@@ -227,7 +257,7 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfDeposit, DepositAmount, IsDepositWithrawUser)
 		SELECT d.rptDate, d.CustId, d.CurrencyId, 
 			SUM(d.BetCount) AS NumberOfDeposit, 
-			SUM(d.Amount * e.Rate) AS DepositAmount,
+			SUM(d.Amount * e.Rate / e.MultipleBy) AS DepositAmount,
 			1 AS IsDepositWithrawUser
 		FROM 
 		(
@@ -235,7 +265,7 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
 				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
 				COUNT(1) AS BetCount,
-				SUM(d.Amount / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Amount
+				SUM(d.Amount) AS Amount
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 			WHERE d.WinlostDate BETWEEN @FDate AND @TDate
@@ -262,7 +292,7 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
 		SELECT w.rptDate, w.CustId, w.CurrencyId, 
 			SUM(w.BetCount) AS NumberOfWithdrawal, 
-			SUM(w.Amount * e.Rate) AS WithdrawalAmount,
+			SUM(w.Amount * e.Rate / e.MultipleBy) AS WithdrawalAmount,
 			1 AS IsDepositWithrawUser
 		FROM 
 		(
@@ -270,7 +300,7 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
 				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate,
 				COUNT(1) AS BetCount,
-				SUM(w.Amount / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Amount
+				SUM(w.Amount) AS Amount
 			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON w.CustId = c.CustId
 			WHERE w.WinlostDate BETWEEN @FDate AND @TDate
@@ -307,6 +337,7 @@ BEGIN
 			,Winloss = SUM(Winloss)
 			,ProgressiveWin = SUM(ProgressiveWin)
 			,ProgressiveBet = SUM(ProgressiveBet)
+			,Commission = SUM(Commission)
 			,Revenue = SUM(Revenue)
 			,RevenueForMargin = SUM(RevenueForMargin)
 			,BetCount = SUM(BetCount)
@@ -336,6 +367,7 @@ BEGIN
 		,r.Winloss AS PlayerWinloss
 		,r.ProgressiveWin
 		,r.ProgressiveBet
+		,r.Commission
 		,r.BetCount
 		,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE NetTurnOver/BetCount END AS AvgBetAmount
 		,CASE WHEN ISNULL(BetCount, 0) = 0 THEN 0 ELSE 1 END AS UniquePlayers
