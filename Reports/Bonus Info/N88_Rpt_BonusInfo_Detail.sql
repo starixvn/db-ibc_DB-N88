@@ -31,6 +31,7 @@ AS
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220214@Percy: Return TransactionType column [RedmineID: #164724]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
+		- 20220412@Percy: Integrate new bonus: Referral [RedmineID: #171245]
 
 	Param's Explanation:
 		@SortbyId:
@@ -181,6 +182,18 @@ BEGIN
 			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+		END
+
+		-- Referral
+		IF @DataSource = 'ReferralMLog'
+		BEGIN
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), ReferralAmount
+			FROM dbo.ReferralMLog WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 		END

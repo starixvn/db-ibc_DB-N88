@@ -1,4 +1,4 @@
-/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested=""></info>*/
+/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
 USE bodb_N88
 GO
 
@@ -50,6 +50,7 @@ AS
 		- 20211028@Percy: Integrate some bonus types [RedmineID: #161048]
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
+		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 
 	Param's Explanation:
 		@SortbyId:
@@ -326,141 +327,39 @@ BEGIN
 			INNER JOIN #__Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY w.rptDate, w.CustId, w.CurrencyId
 
-		-- Bonus: BonusInfo
+		-- Bonus: CustBonusSummary
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
+		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount), SUM(b.Amount * e.Rate), 1
 		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-				,SUM(BonusAmount) AS Amount
-			FROM dbo.BonusInfo WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
+			SELECT b.DataSource, b.BonusType
+				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.BonusTime)) AS rptDate
+				,b.CustId, b.CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, b.BonusTime)) AS ExchangeDate
+				,SUM(b.BonusAmount * CASE
+									WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusType IN (1, 3) THEN 1 -- Credit, Increase bonus
+									WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusType IN (2, 4) THEN -1 -- Debit, Decrease bonus
+									WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusType = 1 THEN 1 -- 3rd Add
+									WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusType = 2 THEN -1 -- 3rd Minus
+									ELSE 1 END) AS Amount
+			FROM dbo.CustBonusSummary b WITH (NOLOCK)
+			WHERE b.BonusTime >= @FromDateTimeGMT0 AND b.BonusTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.SiteId) + ',%'
+				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
+				AND 1 = CASE
+						WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusStatus <> 2 THEN 0 -- 2 = Approved
+						WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusStatus <> 0 THEN 0 -- 0 = Success
+						WHEN b.DataSource = 'VipUpgradeReview' AND b.BonusStatus <> 4 THEN 0 -- 4 = Settled
+						ELSE 1 END
+				AND 1 = CASE WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusTime >= '2021-10-31 16:00' AND b.BonusType IN (1, 2) THEN 0 ELSE 1 END -- From 1 Nov 2021 (GMT+8), don't get Credit & Debit
+				AND 1 = CASE WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusTime >= '2021-10-31 16:00' THEN 0 ELSE 1 END -- only get LogAdminAdjustWallet data before 1 Nov 2021 (GMT+8)
+			GROUP BY b.DataSource, b.BonusType
+				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, BonusTime))
+				,CustId, CurrencyId
+				,CONVERT(DATE, DATEADD(HOUR, -4, BonusTime))
 		) b
 			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
-
-		-- Bonus: RebateMLog
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-				,SUM(RedeemAmount) AS Amount
-			FROM dbo.RebateMLog WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-		) b
-			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
-
-		-- Bonus: DrawLog
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, DrawTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, DrawTime)) AS ExchangeDate
-				,SUM(Amount) AS Amount
-			FROM dbo.DrawLog WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND DrawTime >= @FromDateTimeGMT0 AND DrawTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, DrawTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, DrawTime))
-		) b
-			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
-
-		-- Bonus: AdjustmentInfo
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-				,SUM(Amount * CASE
-								WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
-								WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
-								ELSE 0 END) AS Amount
-			FROM dbo.AdjustmentInfo WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND Status = 2 -- Approved
-				AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-		) b
-			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
-
-		-- Bonus: LogAdminAdjustWallet
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-				,SUM(Amount * CASE
-								WHEN Direction = 1 THEN 1 -- 3rd Add
-								WHEN Direction = 2 THEN -1 -- 3rd Minus
-								ELSE 0 END) AS Amount
-			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND Status = 0 -- Success
-				AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
-		) b
-			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
-
-		-- Bonus: VIPUpgradeReview
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime)) AS ExchangeDate
-				,SUM(UpgradeAmount) AS Amount
-			FROM dbo.VIPUpgradeReview WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND SettleTime >= @FromDateTimeGMT0 AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND Status = 4 -- Settled
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, SettleTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, SettleTime))
-		) b
-			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
-
-		-- Bonus: CustVerificationReward
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount / e.MultipleBy), SUM(b.Amount * e.Rate / e.MultipleBy), 1
-		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime)) AS rptDate, CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime)) AS ExchangeDate
-				,SUM(RewardAmount) AS Amount
-			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @FDate AND @TDate
-				AND RewardTime >= @FromDateTimeGMT0 AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, RewardTime)), CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, RewardTime))
-		) b
-			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			LEFT JOIN dbo.N88_f_BonusType() bt ON b.DataSource = bt.DataSource AND ISNULL(b.BonusType, 0) = bt.DBTypeId
+		WHERE b.DataSource IN ('BonusInfo', 'RebateMLog', 'DrawLog') OR bt.DataSource IS NOT NULL
 		GROUP BY b.rptDate, b.CustId, b.CurrencyId
 	END
 	----end
