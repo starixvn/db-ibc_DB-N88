@@ -139,8 +139,8 @@ BEGIN
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
@@ -176,7 +176,9 @@ BEGIN
 				INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.ExchangeId
 
 			UPDATE t
-			SET t.Commission = -@Commission, t.BasedCommission = -@BasedCommission, t.Revenue = -@Commission, t.BasedRevenue = -@BasedCommission
+			SET t.Commission = -@Commission, t.BasedCommission = -@BasedCommission
+				,t.Revenue = -@Commission, t.BasedRevenue = -@BasedCommission
+				,t.RevenueForMargin = -@Commission, t.BasedRevenueForMargin = -@BasedCommission
 			FROM #__N88_SumWinloss t
 			WHERE t.GameType = 51
 		END
@@ -229,8 +231,8 @@ BEGIN
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))

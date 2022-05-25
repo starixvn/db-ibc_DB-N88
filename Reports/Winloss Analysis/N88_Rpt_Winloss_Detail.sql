@@ -115,8 +115,8 @@ BEGIN
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
@@ -166,7 +166,7 @@ BEGIN
 			GROUP BY t.CustId, t.rptDate
 
 			UPDATE t
-			SET t.Commission = -w.Commission, t.Revenue = -w.Commission
+			SET t.Commission = -w.Commission, t.Revenue = -w.Commission, t.RevenueForMargin = -w.Commission
 			FROM #__N88_SumWinloss t
 				INNER JOIN #__9W w ON t.CustId = w.CustId AND t.rptDate = w.rptDate
 			WHERE t.GameType = 51
@@ -212,8 +212,8 @@ BEGIN
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
-				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))

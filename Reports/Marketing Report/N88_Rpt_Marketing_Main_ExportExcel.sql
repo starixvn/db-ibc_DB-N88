@@ -35,6 +35,7 @@ AS
 		- 20220214@Percy: Remove some redundant information & apply SignupURL function [RedmineID: #164724]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
+		- 20220518@Percy: Remove CR & RR information if Date Range is one date [RedmineID: #172917]
 */
 
 BEGIN
@@ -334,8 +335,8 @@ BEGIN
 
 		SELECT  @CR = ROUND(@CR, 0), @RR = ROUND(@RR, 0), @MTD_CR = ROUND(@MTD_CR, 0), @MTD_RR = ROUND(@MTD_RR, 0)
 
-		---show CR/RR when user is not limited by last x day
-		IF (@FromLastXDays IS NULL)
+		---show CR/RR when user is not limited by last x day and date range is greater than 1 date
+		IF (@FromLastXDays IS NULL) AND DATEDIFF(DAY, @FromDate, @ToDate) > 0
 		BEGIN
 			INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, DataType)
 			VALUES
