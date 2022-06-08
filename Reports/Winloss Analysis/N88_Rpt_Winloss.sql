@@ -52,7 +52,7 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
-		- 20220608@Percy: Add Group By Brand (Site) [RedmineID: #173396]
+		- 20220608@Percy: Update GGR formula for 9W Sports & Add Group By Brand (Site) [RedmineID: #173396]
 
 	Param's Explanation:
 		@GroupBy:
@@ -199,8 +199,8 @@ BEGIN
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
@@ -303,8 +303,8 @@ BEGIN
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
