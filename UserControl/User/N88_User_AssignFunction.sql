@@ -22,9 +22,10 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20220615@Kos: Handle SELECT INTO using temp table [RedmineID: #174035]
 
-	Param's Explanation: 
-		- Value : '<ROOT><FunctionPolicy SiteId="4" FunctionId="4" Policy="1"></FunctionPolicy></ROOT>'  
+	Param's Explanation:
+		- Value : '<ROOT><FunctionPolicy SiteId="4" FunctionId="4" Policy="1"></FunctionPolicy></ROOT>'
 
 		*** WRITE LOG template:
 		main:	<root><xml path="r" />
@@ -49,9 +50,15 @@ BEGIN
 		,@xml			XML
 
 	SET @startRun = GETDATE()
-	  
+
+	CREATE TABLE #TempData (
+		FunctionId	SMALLINT,
+		Policy		TINYINT,
+		UserId		INT
+	)
+
+	INSERT INTO #TempData (FunctionId, Policy, UserId)
 	SELECT FunctionId, Policy, UserId
-	INTO #TempData
 	FROM dbo.N88_UserFunction WITH (NOLOCK)
 	WHERE UserId = @UserId AND SiteId = @SiteId
 
@@ -82,15 +89,15 @@ BEGIN
 			,T.C.value('./@Policy', 'tinyint')
 	FROM @xml.nodes('/ROOT/FunctionPolicy') as [T](C) --T: table, C: column	
 
-	--Update Policy = 0 for function not set to user
+	-- Update Policy = 0 for function not set to user
 	UPDATE dbo.N88_UserFunction WITH (ROWLOCK, UPDLOCK)
-	SET Policy        =   0
-		,ModifiedBy   =   @ModifiedBy
-		,ModifiedDate =   @ModifiedDate    
+	SET Policy = 0
+		,ModifiedBy = @ModifiedBy
+		,ModifiedDate = @ModifiedDate
 	WHERE
 		UserId = @UserId
 		AND SiteId = @SiteId
-		AND FunctionId NOT IN (	SELECT FunctionId FROM @TableFunctionPolicy )
+		AND FunctionId NOT IN (SELECT FunctionId FROM @TableFunctionPolicy)
 
 	--Update policy for function of user
 	UPDATE dbo.N88_UserFunction WITH (ROWLOCK, UPDLOCK)
@@ -134,7 +141,6 @@ BEGIN
 		RETURN
 	END
 
-
 	-- write log after update
 	SET @xml = (
 		SELECT
@@ -159,7 +165,7 @@ BEGIN
 	SET @endRun		= GETDATE()
 	SET @duration	= DATEDIFF(MILLISECOND, @startRun, @endRun)   
 
-	EXEC dbo.N88_RunSP_WriteLog 
+	EXEC dbo.N88_RunSP_WriteLog
 		@UserId			= @CurrentUserId,
 		@SPName			= 'N88_User_AssignFunction',
 		@ObjectId		= @UserId,
@@ -171,5 +177,7 @@ BEGIN
 		@Data			= @logSPData,
 		@OldData		= @logSPDataOld,
 		@Duration		= @Duration
+
+	DROP TABLE #TempData
 END
 GO

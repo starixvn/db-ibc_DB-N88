@@ -17,6 +17,7 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20220615@Kos: Fix issue [RedmineID: #174035]
 */
 
 BEGIN
@@ -52,6 +53,8 @@ BEGIN
 				, u.firstname
 				, u.lastname
 				, u.email
+				, u.IsLicenseeUser
+				, u.SourceSiteId
 				, u.username
 				, u.userpwd
 				, us.LastLoginDate
@@ -99,7 +102,6 @@ BEGIN
 					WHERE FunctionId = @FunctionId AND us.SiteId = @SiteId AND Policy > 0)
 		) AS Temp
 	WHERE Temp.num BETWEEN @FirstRec AND @LastRec
-	ORDER BY Temp.num
+	ORDER BY Temp.num ASC
 END
-
 GO

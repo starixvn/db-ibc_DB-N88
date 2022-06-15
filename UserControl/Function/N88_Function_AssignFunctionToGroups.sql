@@ -22,6 +22,7 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20220615@Kos: Handle SELECT INTO using temp table [RedmineID: #174035]
 
 	Param's Explanation: 
 		- Value : '<ROOT><FunctionPolicy GroupId='{0}' Policy='{1}'></FunctionPolicy></ROOT>'
@@ -40,13 +41,20 @@ BEGIN
 
 	SET @startRun = GETDATE()
 
+	CREATE TABLE #TempData (
+		FunctionId	SMALLINT,
+		Policy		TINYINT,
+		GroupId		SMALLINT,
+		GroupName	VARCHAR(50)
+	)
+
 	-- Write log before assign permission
+	INSERT INTO #TempData (FunctionId, Policy, GroupId, GroupName)
 	SELECT
 		gf.FunctionId,
 		gf.Policy,
 		gf.GroupId,
 		g.GroupName
-	INTO #TempData
 	FROM dbo.N88_GroupFunction AS gf WITH (NOLOCK)
 		INNER JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON gf.GroupId = g.GroupId
 	WHERE gf.FunctionId = @FunctionId
@@ -67,7 +75,7 @@ BEGIN
 	SET @logSPDataOld = REPLACE(CONVERT(NVARCHAR(MAX), @xml), '" />', '"/"')	
 	-- Read information from @Value and insert into temp table
 	DECLARE @TblFuncPolicy TABLE(GroupId SMALLINT, Policy TINYINT)
-   
+
 	DECLARE @DocHandler INT
 
 	EXEC sp_xml_preparedocument @DocHandler OUTPUT, @Value
@@ -81,7 +89,7 @@ BEGIN
 
 	EXEC sp_xml_removedocument @DocHandler
 
-	--Update policy for users assigned the function already
+	-- Update policy for users assigned the function already
 	UPDATE dbo.N88_GroupFunction
 	SET
 		Policy			= 1
@@ -93,7 +101,7 @@ BEGIN
 		AND GroupId IN (SELECT GroupId FROM @TblFuncPolicy WHERE Policy = 1)
 
 	UPDATE dbo.N88_GroupFunction
-	SET	
+	SET
 		Policy			= 2
 		,ModifiedBy		= @ModifiedBy
 		,ModifiedDate	= @ModifiedDate
@@ -170,5 +178,7 @@ BEGIN
 		@Data			= @logSPData,
 		@OldData		= @logSPDataOld,
 		@Duration		= @Duration
+
+	DROP TABLE #TempData
 END
 GO

@@ -22,9 +22,10 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20220615@Kos: Handle SELECT INTO using temp table [RedmineID: #174035]
 
 	Param's Explanation: 
-		- Value : '<ROOT><FunctionPolicy UserId='{0}' Policy='{1}'></FunctionPolicy></ROOT>'
+		- Value: '<ROOT><FunctionPolicy UserId='{0}' Policy='{1}'></FunctionPolicy></ROOT>'
 */
 
 BEGIN
@@ -38,12 +39,19 @@ BEGIN
 		,@logSPDataOld NVARCHAR(MAX)
 		,@xml XML
 
+	CREATE TABLE #TempData (
+		FunctionId	SMALLINT,
+		Policy		TINYINT,
+		UserId		INT,
+		Username	NVARCHAR(50)
+	)
+
 	-- Write log before update
+	INSERT INTO #TempData (FunctionId, Policy, UserId, Username)
 	SELECT uf.FunctionId
 		,uf.Policy
 		,uf.UserId
 		,u.username
-	INTO #TempData
 	FROM dbo.N88_UserFunction AS uf WITH (NOLOCK)
 		INNER JOIN dbo.N88_Users AS u WITH (NOLOCK) ON uf.UserId = u.UserId
 	WHERE uf.FunctionId = @FunctionId
@@ -159,5 +167,7 @@ BEGIN
 		,@Data = @logSPData
 		,@OldData = @logSPDataOld
 		,@Duration = @Duration
+
+	DROP TABLE #TempData
 END
 GO
