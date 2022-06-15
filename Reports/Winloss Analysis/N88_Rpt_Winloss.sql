@@ -881,6 +881,7 @@ BEGIN
 				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
 				,BonusAmount = SUM(BonusAmount)
 				,BasedBonusAmount = SUM(BasedBonusAmount)
+				,UniquePlayers = COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN CustId ELSE NULL END))
 			FROM #__N88_SumWinloss
 			GROUP BY SiteId, CurrencyId
 		)
@@ -947,7 +948,7 @@ BEGIN
 			,r.BetCount
 			,CASE WHEN ISNULL(r.BetCount, 0) = 0 THEN 0 ELSE r.NetTurnOver/r.BetCount END
 			,CASE WHEN ISNULL(r.BetCount, 0) = 0 THEN 0 ELSE r.BasedNetTurnOver/r.BetCount END
-			,CASE WHEN ISNULL(r.BetCount, 0) = 0 THEN 0 ELSE 1 END AS UniquePlayers
+			,r.UniquePlayers
 			,r.NumberOfDeposit		
 			,r.DepositAmount
 			,r.BasedDepositAmount
