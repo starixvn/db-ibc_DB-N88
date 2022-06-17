@@ -52,8 +52,16 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
+		- 20220608@Percy: Update GGR formula for 9W Sports & Add Group By Brand (Site) [RedmineID: #173396]
 
 	Param's Explanation:
+		@GroupBy:
+			.  1 = Date
+			.  2 = Month
+			.  3 = Product
+			.  4 = Currency
+			.  5 = Player
+			.  6 = Brand (Site)
 		@SortbyId:
 			.  1 = Group
 			.  2 = Turnover
@@ -100,6 +108,7 @@ BEGIN
 		,GameType					INT
 		,CustId						INT
 		,CurrencyId					INT
+		,SiteId						INT
 		,BetCount					INT
 		,TurnOver					MONEY
 		,NetTurnOver				MONEY
@@ -154,11 +163,11 @@ BEGIN
 
 		INSERT INTO #__N88_SumWinloss
 		(
-			rptDate, GameType, CustId, CurrencyId
+			rptDate, GameType, CustId, CurrencyId, SiteId
 			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, TurnoverNoDraw, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
 			,BasedTurnOver, BasedNetTurnOver, BasedNetTurnOverForMargin, BasedTurnoverNoDraw, BasedRevenue, BasedRevenueForMargin, BasedWinloss, BasedProgressiveWin, BasedProgressiveBet
 		)
-		SELECT rptDate, GameType, CustId, Currency
+		SELECT rptDate, GameType, CustId, Currency, SiteId
 			,SUM(BetCount)
 			,SUM(TurnOver)
 			,SUM(NetTurnOver)
@@ -183,14 +192,15 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
 				,r.CustId
 				,r.Currency
+				,r.SiteId
 				,rptDate				= CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,GameType				= CASE WHEN @GroupBy = 3 THEN r.GameType END
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
@@ -205,11 +215,12 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime))
 				,r.CustId
 				,r.Currency
+				,r.SiteId
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,CASE WHEN @GroupBy = 3 THEN r.GameType END
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
-		GROUP BY rptDate, GameType, CustId, Currency
+		GROUP BY rptDate, GameType, CustId, Currency, SiteId
 
 		-- Get commission for 9W (filter by winlostdate only)
 		IF ',' + @ProductIds + ',' LIKE '%,51,%'
@@ -256,11 +267,11 @@ BEGIN
 
 		INSERT INTO #__N88_SumWinloss
 		(
-			rptDate, GameType, CustId, CurrencyId
+			rptDate, GameType, CustId, CurrencyId, SiteId
 			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, TurnoverNoDraw, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
 			,BasedTurnOver, BasedNetTurnOver, BasedNetTurnOverForMargin, BasedTurnoverNoDraw, BasedRevenue, BasedRevenueForMargin, BasedWinloss, BasedProgressiveWin, BasedProgressiveBet
 		)
-		SELECT rptDate, GameType, CustId, Currency
+		SELECT rptDate, GameType, CustId, Currency, SiteId
 			,SUM(BetCount)
 			,SUM(TurnOver)
 			,SUM(NetTurnOver)
@@ -285,14 +296,15 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
 				,r.CustId
 				,r.Currency
+				,r.SiteId
 				,rptDate				= CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,GameType				= CASE WHEN @GroupBy = 3 THEN r.GameType END
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
 				,NetTurnOverForMargin	= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE ValidBet END)
 				,TurnOverNoDraw			= SUM(CASE WHEN StatusId = 4 THEN 0 ELSE TurnOver END)
-				,Revenue				= SUM(CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
-				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42, 51) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,Revenue				= SUM(CASE WHEN r.GameType IN (41, 42) THEN ISNULL(Revenue, 0) ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
+				,RevenueForMargin		= SUM(CASE WHEN r.GameType IN (41, 42) THEN 0 ELSE -(Winloss - ISNULL(ProgressiveWin, 0) + ISNULL(ProgressiveBet, 0)) END)
 				,Winloss				= SUM(Winloss)
 				,ProgressiveWin			= SUM(ISNULL(ProgressiveWin, 0))
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
@@ -307,11 +319,12 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime))
 				,r.CustId
 				,r.Currency
+				,r.SiteId
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,CASE WHEN @GroupBy = 3 THEN r.GameType END
 		) r
 			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
-		GROUP BY rptDate, GameType, CustId, Currency
+		GROUP BY rptDate, GameType, CustId, Currency, SiteId
 	END
 
 	-- Reset Exchange
@@ -324,10 +337,10 @@ BEGIN
 	-- Deposit/Withdrawal/Bonus
 	BEGIN 
 		-- Deposit: DepositInfo
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfDeposit, DepositAmount, BasedDepositAmount, IsExtraUser)
-		SELECT d.rptDate, d.CustId, d.CurrencyId, SUM(d.BetCount), SUM(d.Amount / e.MultipleBy), SUM(d.Amount * e.Rate / e.MultipleBy), 1
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, NumberOfDeposit, DepositAmount, BasedDepositAmount, IsExtraUser)
+		SELECT d.rptDate, d.CustId, d.CurrencyId, d.SiteId, SUM(d.BetCount), SUM(d.Amount / e.MultipleBy), SUM(d.Amount * e.Rate / e.MultipleBy), 1
 		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 				,COUNT(1) AS BetCount, SUM(Amount) AS Amount
 			FROM dbo.DepositInfo WITH (NOLOCK)
@@ -336,17 +349,17 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 3 -- Approved
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) d
 			INNER JOIN #__Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY d.rptDate, d.CustId, d.CurrencyId
+		GROUP BY d.rptDate, d.CustId, d.CurrencyId, d.SiteId
 		
 		-- Withdrawal: WithdrawalInfo
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfWithdrawal, WithdrawalAmount, BasedWithdrawalAmount, IsExtraUser)
-		SELECT w.rptDate, w.CustId, w.CurrencyId, SUM(w.BetCount), SUM(w.Amount / e.MultipleBy), SUM(w.Amount * e.Rate / e.MultipleBy), 1
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, NumberOfWithdrawal, WithdrawalAmount, BasedWithdrawalAmount, IsExtraUser)
+		SELECT w.rptDate, w.CustId, w.CurrencyId, w.SiteId, SUM(w.BetCount), SUM(w.Amount / e.MultipleBy), SUM(w.Amount * e.Rate / e.MultipleBy), 1
 		FROM (
-			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId
+			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 				,COUNT(1) AS BetCount, SUM(Amount) AS Amount
 			FROM dbo.WithdrawalInfo WITH (NOLOCK)
@@ -355,19 +368,19 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
 				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 6 -- Approved
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) w
 			INNER JOIN #__Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY w.rptDate, w.CustId, w.CurrencyId
+		GROUP BY w.rptDate, w.CustId, w.CurrencyId, w.SiteId
 
 		-- Bonus: CustBonusSummary
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, SUM(b.Amount), SUM(b.Amount * e.Rate), 1
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, BonusAmount, BasedBonusAmount, IsExtraUser)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, b.SiteId, SUM(b.Amount), SUM(b.Amount * e.Rate), 1
 		FROM (
 			SELECT b.DataSource, b.BonusType
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.BonusTime)) AS rptDate
-				,b.CustId, b.CurrencyId
+				,b.CustId, b.CurrencyId, b.SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, b.BonusTime)) AS ExchangeDate
 				,SUM(b.BonusAmount * CASE
 									WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusType IN (1, 3) THEN 1 -- Credit, Increase bonus
@@ -387,14 +400,14 @@ BEGIN
 				AND 1 = CASE WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusTime >= '2021-10-31 16:00' AND b.BonusType IN (1, 2) THEN 0 ELSE 1 END -- From 1 Nov 2021 (GMT+8), don't get Credit & Debit
 				AND 1 = CASE WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusTime >= '2021-10-31 16:00' THEN 0 ELSE 1 END -- only get LogAdminAdjustWallet data before 1 Nov 2021 (GMT+8)
 			GROUP BY b.DataSource, b.BonusType
-				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, BonusTime))
-				,CustId, CurrencyId
-				,CONVERT(DATE, DATEADD(HOUR, -4, BonusTime))
+				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.BonusTime))
+				,b.CustId, b.CurrencyId, b.SiteId
+				,CONVERT(DATE, DATEADD(HOUR, -4, b.BonusTime))
 		) b
 			INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			LEFT JOIN dbo.N88_f_BonusType() bt ON b.DataSource = bt.DataSource AND ISNULL(b.BonusType, 0) = bt.DBTypeId
 		WHERE b.DataSource IN ('BonusInfo', 'RebateMLog', 'DrawLog') OR bt.DataSource IS NOT NULL
-		GROUP BY b.rptDate, b.CustId, b.CurrencyId
+		GROUP BY b.rptDate, b.CustId, b.CurrencyId, b.SiteId
 	END
 	----end
 
@@ -833,6 +846,119 @@ BEGIN
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			LEFT JOIN #__ClosingBalance cb 
 				ON r.CustId = cb.CustId
+	END
+	-- by brand (site)
+	ELSE IF (@GroupBy = 6)
+	BEGIN
+		;WITH CTE_Result AS (
+			SELECT SiteId, CurrencyId
+				,TurnOver = SUM(TurnOver)
+				,NetTurnOver = SUM(NetTurnOver)
+				,NetTurnOverForMargin = SUM(NetTurnOverForMargin)
+				,TurnoverNoDraw = SUM(TurnoverNoDraw)
+				,BasedTurnOver = SUM(BasedTurnOver)
+				,BasedNetTurnOver = SUM(BasedNetTurnOver)
+				,BasedNetTurnOverForMargin = SUM(BasedNetTurnOverForMargin)
+				,BasedTurnoverNoDraw = SUM(BasedTurnoverNoDraw)
+				,Winloss = SUM(Winloss)
+				,BasedWinloss = SUM(BasedWinloss)
+				,Revenue = SUM(Revenue)
+				,BasedRevenue = SUM(BasedRevenue)
+				,RevenueForMargin = SUM(RevenueForMargin)
+				,BasedRevenueForMargin = SUM(BasedRevenueForMargin)
+				,ProgressiveWin = SUM(ProgressiveWin)
+				,ProgressiveBet = SUM(ProgressiveBet)
+				,BasedProgressiveWin = SUM(BasedProgressiveWin)
+				,BasedProgressiveBet = SUM(BasedProgressiveBet)
+				,Commission = SUM(Commission)
+				,BasedCommission = SUM(BasedCommission)
+				,BetCount = SUM(BetCount)
+				,NumberOfDeposit = SUM(NumberOfDeposit)	
+				,DepositAmount = SUM(DepositAmount)
+				,BasedDepositAmount = SUM(BasedDepositAmount)
+				,NumberOfWithdrawal = SUM(NumberOfWithdrawal)	
+				,WithdrawalAmount = SUM(WithdrawalAmount)
+				,BasedWithdrawalAmount = SUM(BasedWithdrawalAmount)
+				,BonusAmount = SUM(BonusAmount)
+				,BasedBonusAmount = SUM(BasedBonusAmount)
+				,UniquePlayers = COUNT(DISTINCT (CASE WHEN IsExtraUser = 0 THEN CustId ELSE NULL END))
+			FROM #__N88_SumWinloss
+			GROUP BY SiteId, CurrencyId
+		)
+		INSERT INTO #__tmpResult
+		(
+			[Group]
+			,CurrencyId
+			,Turnover
+			,NetTurnover
+			,NetTurnoverForMargin
+			,TurnoverNoDraw
+			,BasedTurnover
+			,BasedNetTurnover
+			,BasedNetTurnoverForMargin
+			,BasedTurnoverNoDraw
+			,GGR
+			,BasedGGR
+			,GGRForMargin
+			,BasedGGRForMargin
+			,PlayerWinloss
+			,BasedPlayerWinloss
+			,ProgressiveWin
+			,ProgressiveBet
+			,BasedProgressiveWin
+			,BasedProgressiveBet
+			,Commission
+			,BasedCommission
+			,BetCount
+			,AvgBetAmount
+			,BasedAvgBetAmount
+			,UniquePlayers
+			,NumberOfDeposit		
+			,DepositAmount
+			,BasedDepositAmount
+			,NumberOfWithdrawal		
+			,WithdrawalAmount	
+			,BasedWithdrawalAmount
+			,BonusAmount
+			,BasedBonusAmount
+		)
+		SELECT 
+			s.LicenseeName
+			,r.CurrencyId
+			,r.TurnOver
+			,r.NetTurnOver
+			,r.NetTurnOverForMargin
+			,r.TurnoverNoDraw
+			,r.BasedTurnOver
+			,r.BasedNetTurnOver
+			,r.BasedNetTurnOverForMargin
+			,r.BasedTurnoverNoDraw
+			,r.Revenue
+			,r.BasedRevenue
+			,r.RevenueForMargin
+			,r.BasedRevenueForMargin
+			,r.Winloss
+			,r.BasedWinloss
+			,r.ProgressiveWin
+			,r.ProgressiveBet
+			,r.BasedProgressiveWin
+			,r.BasedProgressiveBet
+			,r.Commission
+			,r.BasedCommission
+			,r.BetCount
+			,CASE WHEN ISNULL(r.BetCount, 0) = 0 THEN 0 ELSE r.NetTurnOver/r.BetCount END
+			,CASE WHEN ISNULL(r.BetCount, 0) = 0 THEN 0 ELSE r.BasedNetTurnOver/r.BetCount END
+			,r.UniquePlayers
+			,r.NumberOfDeposit		
+			,r.DepositAmount
+			,r.BasedDepositAmount
+			,r.NumberOfWithdrawal		
+			,r.WithdrawalAmount	
+			,r.BasedWithdrawalAmount
+			,r.BonusAmount
+			,r.BasedBonusAmount
+		FROM CTE_Result r
+			INNER JOIN dbo.ServerInfo s WITH (NOLOCK) ON r.SiteId = s.SiteId
 	END
 
 	-- 3. Final result

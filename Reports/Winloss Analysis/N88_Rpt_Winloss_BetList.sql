@@ -31,6 +31,7 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20220518@Percy: Set GGR = 0 for 9W Sports [RedmineID: #172917]
+		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
 
 	Param's Explanation:
 		@SortbyId:
@@ -137,7 +138,7 @@ BEGIN
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
 				, ISNULL(r.ProgressiveWin, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveWin
 				, ISNULL(r.ProgressiveBet, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveBet
-				, (CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)
+				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)
 					/(CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
@@ -203,7 +204,7 @@ BEGIN
 				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
 				, ISNULL(r.ProgressiveWin, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)  AS ProgressiveWin
 				, ISNULL(r.ProgressiveBet, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveBet
-				, (CASE WHEN r.GameType = 51 THEN 0 WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)
+				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)
 					/(CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
 				, r.TicketStatus
 				, r.TpId
