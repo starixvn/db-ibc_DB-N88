@@ -30,6 +30,7 @@ AS
 		- 20210423@Sol: Initial sp - Detail betlist for non-sport - [Redmine:#139333]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - include free spin filter - [RedmineID: #155334]
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
+		- 20220222@Percy: Get data from TpBetRecord_bk [RedmineID: #167823]
 		- 20220518@Percy: Set GGR = 0 for 9W Sports [RedmineID: #172917]
 		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
 
@@ -48,194 +49,135 @@ AS
 
 BEGIN
 	SET NOCOUNT ON
-
-	DECLARE @FDate DATE, @TDate DATE
-	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
-
+	
 	-- Data on GMT+0 --> convert timezone
 	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME
 	SELECT  @FromDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
-			,@ToDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
+			,@ToDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, DATEADD(DAY, 1, @ToDate)))
 
-	DECLARE @SiteId INT, @CurrencyId INT
-	SELECT  @SiteId = c.SiteId, @CurrencyId = c.CurrencyId
-	FROM dbo.Customer c WITH(NOLOCK)
-	WHERE c.CustId = CAST(@CustId AS INT)
+	DECLARE @FDate DATETIME = @FromDateTimeGMT0, @TDate DATETIME = @ToDateTimeGMT0
+	DECLARE @ArchiveDate DATETIME = dbo.N88_f_GetSystemSettings('ArchiveData_Date')
 	
-	-- 1. Get raw data
+	-- Get raw data
 	CREATE TABLE #__N88_BetList
 	(
-		RowNumber INT,
-		RefNo VARCHAR(50),
-		TransTime DATETIME,
-		Stake MONEY,
-		PlayerWinLoss MONEY,
-		ProgressiveWin MONEY,
-		ProgressiveBet MONEY,
-		GGR MONEY,
-		TicketStatus VARCHAR(100),
-		BasedStake MONEY,
-		BasedPlayerWinLoss MONEY,
-		BasedProgressiveWin MONEY,
-		BasedProgressiveBet MONEY,
-		BasedGGR MONEY,
-		TpId INT,
-		GameType INT
+		RefNo VARCHAR(50)
+		,GameType INT
+		,TicketStatus VARCHAR(100)
+		,ExchangeDate DATE
+		,TransTime DATETIME
+		,Stake MONEY
+		,PlayerWinLoss MONEY
+		,ProgressiveWin MONEY
+		,ProgressiveBet MONEY
+		,GGR MONEY
 	)
 
-	CREATE CLUSTERED INDEX CIX_N88_BetList ON #__N88_BetList (RowNumber)
-
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
-	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
-	
-	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
-
-	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
-	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
-	
-	---- by winlostdate
-	IF (@FilterBy = 1)
+	-- TpBetRecord
+	IF @ToDateTimeGMT0 >= @ArchiveDate
 	BEGIN
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
-		WHERE e.ExchangeId = @CurrencyId
-
+		SELECT @FDate = CASE WHEN @FromDateTimeGMT0 > @ArchiveDate THEN @FromDateTimeGMT0 ELSE @ArchiveDate END
+			,@TDate = @ToDateTimeGMT0
+		
 		INSERT INTO #__N88_BetList
 		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, ProgressiveWin, ProgressiveBet, GGR, TicketStatus,
-			BasedStake, BasedPlayerWinLoss, BasedProgressiveWin, BasedProgressiveBet, BasedGGR, TpId, GameType
-		)
-		SELECT 
-			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
-			r.TransId AS RefNo,
-			r.rptDate AS TransTime,
-			SUM(r.Stake) AS Stake,
-			SUM(r.WinlostAmount) AS PlayerWinLoss,
-			SUM(r.ProgressiveWin) AS ProgressiveWin,
-			SUM(r.ProgressiveBet) AS ProgressiveBet,
-			SUM(r.Revenue) AS GGR,
-			CASE 
-				WHEN r.TicketStatus = 1 THEN 'Won'
-				WHEN r.TicketStatus = 2 THEN 'Loss'
-				WHEN r.TicketStatus = 4 THEN 'Draw'
-				WHEN r.TicketStatus = 6 THEN 'Free Bet Won'
-			END AS TicketStatus,
-			SUM(r.Stake * e.Rate) AS BasedStake,
-			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
-			SUM(r.ProgressiveWin * e.Rate) AS BasedProgressiveWin,
-			SUM(r.ProgressiveBet * e.Rate) AS BasedProgressiveBet,
-			SUM(r.Revenue * e.Rate) AS BasedGGR,
-			r.TpId,
-			r.GameType
-		FROM (
-			SELECT
-				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
-				, DATEADD(HOUR, @TimeZone, r.TransTime ) AS rptDate
-				, r.CurrencyId
-				, r.TransId
-				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
-				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, ISNULL(r.ProgressiveWin, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveWin
-				, ISNULL(r.ProgressiveBet, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveBet
-				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)
-					/(CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
-				, r.TicketStatus
-				, r.TpId
-				, r.GameType
-			FROM dbo.TpBetRecord r WITH (NOLOCK)
-			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND r.SiteId = @SiteId
-				AND r.CustId = @CustId
-				AND r.CurrencyId = @CurrencyId
-				AND r.GameType = @ProductId
-				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.TicketStatus) + ',%'
-		) r
-			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
-		GROUP BY r.TpId, r.TransId, r.GameType, r.rptDate, r.TicketStatus
-	END
-	---- by transdate
-	ELSE 
-	BEGIN
-		SELECT @MinDate = MIN(CONVERT(DATE, SettledTime)), @MaxDate = MAX(CONVERT(DATE, SettledTime))
-		FROM dbo.TpBetRecord WITH (NOLOCK) WHERE TransTime >= @FromDateTimeGMT0 AND TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-
-		SELECT @MinDate = DATEADD(DAY, -1, @MinDate), @MaxDate = DATEADD(DAY, 1, @MaxDate)
-
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate
-		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
-		WHERE e.ExchangeId = @CurrencyId
-
-		INSERT INTO #__N88_BetList
-		(
-			RowNumber, RefNo, TransTime, Stake, PlayerWinLoss, ProgressiveWin, ProgressiveBet, GGR, TicketStatus,
-			BasedStake, BasedPlayerWinLoss, BasedProgressiveWin, BasedProgressiveBet, BasedGGR, TpId, GameType
+			RefNo, GameType, TicketStatus, ExchangeDate, TransTime, Stake, PlayerWinLoss, ProgressiveWin, ProgressiveBet, GGR
 		)
 		SELECT
-			ROW_NUMBER() OVER(ORDER BY r.rptDate) AS RowNumber,
-			r.TransId AS RefNo,
-			r.rptDate AS TransTime,
-			SUM(r.Stake) AS Stake,
-			SUM(r.WinlostAmount) AS PlayerWinLoss,
-			SUM(r.ProgressiveWin) AS ProgressiveWin,
-			SUM(r.ProgressiveBet) AS ProgressiveBet,
-			SUM(r.Revenue) AS GGR,
-			CASE 
+			r.TransId, r.GameType
+			,CASE 
 				WHEN r.TicketStatus = 1 THEN 'Won'
 				WHEN r.TicketStatus = 2 THEN 'Loss'
 				WHEN r.TicketStatus = 4 THEN 'Draw'
 				WHEN r.TicketStatus = 6 THEN 'Free Bet Won'
-			END AS TicketStatus,
-			SUM(r.Stake * e.Rate) AS BasedStake,
-			SUM(r.WinlostAmount * e.Rate) AS BasedPlayerWinLoss,
-			SUM(r.ProgressiveWin * e.Rate) AS BasedProgressiveWin,
-			SUM(r.ProgressiveBet * e.Rate) AS BasedProgressiveBet,
-			SUM(r.Revenue * e.Rate) AS BasedGGR,
-			r.TpId,
-			r.GameType
-		FROM (
-			SELECT
-				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
-				, DATEADD(HOUR, @TimeZone, r.TransTime ) AS rptDate
-				, r.CurrencyId
-				, r.TransId
-				, r.Stake / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Stake
-				, r.WinlostAmount / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WinlostAmount
-				, ISNULL(r.ProgressiveWin, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END)  AS ProgressiveWin
-				, ISNULL(r.ProgressiveBet, 0) / (CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS ProgressiveBet
-				, (CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END)
-					/(CASE WHEN r.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS Revenue
-				, r.TicketStatus
-				, r.TpId
-				, r.GameType
-			FROM dbo.TpBetRecord r WITH (NOLOCK)
-			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND r.SiteId = @SiteId
-				AND r.CustId = @CustId
-				AND r.CurrencyId = @CurrencyId
-				AND r.GameType = @ProductId
-				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.TicketStatus) + ',%'
-		) r
-			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.CurrencyId = e.ExchangeId
-		GROUP BY r.TpId, r.TransId, r.GameType, r.rptDate, r.TicketStatus
+				END AS TicketStatus
+			,CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
+			,DATEADD(HOUR, @TimeZone, r.TransTime ) AS TransTime
+			,r.Stake
+			,r.WinlostAmount AS PlayerWinLoss
+			,ISNULL(r.ProgressiveWin, 0) AS ProgressiveWin
+			,ISNULL(r.ProgressiveBet, 0) AS ProgressiveBet
+			,CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END AS GGR
+		FROM dbo.TpBetRecord r WITH (NOLOCK)
+		WHERE r.CustId = @CustId
+			AND r.GameType = @ProductId
+			AND 1 = CASE
+						WHEN @IsNoDrawTicket = 0 AND @IsIncludedFreeSpin = 0 AND r.TicketStatus IN (1, 2, 4) THEN 1
+						WHEN @IsNoDrawTicket = 0 AND @IsIncludedFreeSpin = 1 AND r.TicketStatus IN (1, 2, 4, 6) THEN 1
+						WHEN @IsNoDrawTicket = 1 AND @IsIncludedFreeSpin = 0 AND r.TicketStatus IN (1, 2) THEN 1
+						WHEN @IsNoDrawTicket = 1 AND @IsIncludedFreeSpin = 1 AND r.TicketStatus IN (1, 2, 6) THEN 1
+						ELSE 0 END
+			AND (
+				(@FilterBy = 1 AND r.SettledTime >= @FDate AND r.SettledTime < @TDate)
+				OR (@FilterBy = 2 AND r.TransTime >= @FDate AND r.TransTime < @TDate)
+			)
 	END
 
-	DROP TABLE #__Exchange
+	-- TpBetRecord_bk
+	IF @FromDateTimeGMT0 < @ArchiveDate
+	BEGIN
+		SELECT @FDate = @FromDateTimeGMT0
+			,@TDate = CASE WHEN @ToDateTimeGMT0 < @ArchiveDate THEN @ToDateTimeGMT0 ELSE @ArchiveDate END
 
-	--return data
-	DECLARE @RowStart INT , @RowEnd INT
+		INSERT INTO #__N88_BetList
+		(
+			RefNo, GameType, TicketStatus, ExchangeDate, TransTime, Stake, PlayerWinLoss, ProgressiveWin, ProgressiveBet, GGR
+		)
+		SELECT
+			r.TransId, r.GameType
+			,CASE 
+				WHEN r.TicketStatus = 1 THEN 'Won'
+				WHEN r.TicketStatus = 2 THEN 'Loss'
+				WHEN r.TicketStatus = 4 THEN 'Draw'
+				WHEN r.TicketStatus = 6 THEN 'Free Bet Won'
+				END AS TicketStatus
+			,CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
+			,DATEADD(HOUR, @TimeZone, r.TransTime ) AS TransTime
+			,r.Stake
+			,r.WinlostAmount AS PlayerWinLoss
+			,ISNULL(r.ProgressiveWin, 0) AS ProgressiveWin
+			,ISNULL(r.ProgressiveBet, 0) AS ProgressiveBet
+			,CASE WHEN r.GameType IN (41, 42) THEN r.Revenue ELSE -(r.WinlostAmount - ISNULL(r.ProgressiveWin, 0) + ISNULL(r.ProgressiveBet, 0)) END AS GGR
+		FROM bodb_N88_Archive.dbo.TpBetRecord_bk r WITH (NOLOCK)
+		WHERE r.CustId = @CustId
+			AND r.GameType = @ProductId
+			AND 1 = CASE
+						WHEN @IsNoDrawTicket = 0 AND @IsIncludedFreeSpin = 0 AND r.TicketStatus IN (1, 2, 4) THEN 1
+						WHEN @IsNoDrawTicket = 0 AND @IsIncludedFreeSpin = 1 AND r.TicketStatus IN (1, 2, 4, 6) THEN 1
+						WHEN @IsNoDrawTicket = 1 AND @IsIncludedFreeSpin = 0 AND r.TicketStatus IN (1, 2) THEN 1
+						WHEN @IsNoDrawTicket = 1 AND @IsIncludedFreeSpin = 1 AND r.TicketStatus IN (1, 2, 6) THEN 1
+						ELSE 0 END
+			AND (
+				(@FilterBy = 1 AND r.SettledTime >= @FDate AND r.SettledTime < @TDate)
+				OR (@FilterBy = 2 AND r.TransTime >= @FDate AND r.TransTime < @TDate)
+			)
+	END
+
+	-- Get Exchange
+	DECLARE @CurrencyId INT
+	SELECT  @CurrencyId = c.CurrencyId
+	FROM dbo.Customer c WITH (NOLOCK)
+	WHERE c.CustId = CAST(@CustId AS INT)
+
+	DECLARE @MinDate DATE, @MaxDate DATE
+	SELECT  @MinDate = MIN(ExchangeDate), @MaxDate = MAX(ExchangeDate) FROM #__N88_BetList
+
+	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, Rate FLOAT, MultipleBy FLOAT, PRIMARY KEY (FromDate))
+	
+	INSERT INTO #__Exchange (FromDate, ToDate, Rate, MultipleBy)
+	SELECT FromDate, ToDate, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
+	WHERE e.ExchangeId = @CurrencyId
+
+	-- Return data
+	DECLARE @RowStart INT, @RowEnd INT
 	SELECT @PageIndex = @PageIndex - 1, @RowStart =  @PageIndex * @PageSize + 1, @RowEnd = @RowStart + @PageSize - 1
 
-	SELECT @TotalRows = MAX(RowNumber) FROM #__N88_BetList
+	SELECT @TotalRows = COUNT(1) FROM #__N88_BetList
 
-	--dynamic sort by user
-	;WITH rs AS
-	(
-		SELECT 
-			t.RefNo, 
-			t.TpId,
-			t.GameType,
+	SELECT RowNumber, RefNo, TransTime, TicketStatus, Stake, BasedStake, PlayerWinLoss, BasedPlayerWinLoss, ProgressiveWin, BasedProgressiveWin, ProgressiveBet, BasedProgressiveBet, GGR, BasedGGR
+	FROM (
+		SELECT
 			ROW_NUMBER() OVER
 				(
 					ORDER BY
@@ -245,47 +187,50 @@ BEGIN
 						CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN t.RefNo END DESC,
 						CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN t.TransTime END ASC,
 						CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN t.TransTime END DESC,
-						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN t.Stake END ASC,
-						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN t.Stake END DESC,
-						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN t.PlayerWinLoss END ASC,
-						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN t.PlayerWinLoss END DESC,
-						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN t.ProgressiveWin END ASC,
-						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN t.ProgressiveWin END DESC,
-						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN t.ProgressiveBet END ASC,
-						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN t.ProgressiveBet END DESC,
-						CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN t.GGR END ASC,
-						CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN t.GGR END DESC,
+						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN t.Stake / e.MultipleBy END ASC,
+						CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN t.Stake / e.MultipleBy END DESC,
+						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN t.PlayerWinLoss / e.MultipleBy END ASC,
+						CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN t.PlayerWinLoss / e.MultipleBy END DESC,
+						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN t.ProgressiveWin / e.MultipleBy END ASC,
+						CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN t.ProgressiveWin / e.MultipleBy END DESC,
+						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN t.ProgressiveBet / e.MultipleBy END ASC,
+						CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN t.ProgressiveBet / e.MultipleBy END DESC,
+						CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN t.GGR / e.MultipleBy END ASC,
+						CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN t.GGR / e.MultipleBy END DESC,
 						CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN t.TicketStatus END ASC,
 						CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN t.TicketStatus END DESC
-				) AS NewRowNumber
+				) AS RowNumber
+			,t.RefNo, t.TransTime, t.TicketStatus
+			,CONVERT(MONEY, t.Stake / e.MultipleBy)						AS Stake
+			,CONVERT(MONEY, t.Stake * e.Rate / e.MultipleBy)			AS BasedStake
+			,CONVERT(MONEY, t.PlayerWinLoss / e.MultipleBy)				AS PlayerWinLoss
+			,CONVERT(MONEY, t.PlayerWinLoss * e.Rate / e.MultipleBy)	AS BasedPlayerWinLoss
+			,CONVERT(MONEY, t.ProgressiveWin / e.MultipleBy)			AS ProgressiveWin
+			,CONVERT(MONEY, t.ProgressiveWin * e.Rate / e.MultipleBy)	AS BasedProgressiveWin
+			,CONVERT(MONEY, t.ProgressiveBet / e.MultipleBy)			AS ProgressiveBet
+			,CONVERT(MONEY, t.ProgressiveBet * e.Rate / e.MultipleBy)	AS BasedProgressiveBet
+			,CONVERT(MONEY, t.GGR / e.MultipleBy)						AS GGR
+			,CONVERT(MONEY, t.GGR * e.Rate / e.MultipleBy)				AS BasedGGR
 		FROM #__N88_BetList t
-	)
-	UPDATE t
-		SET t.RowNumber = rs.NewRowNumber
-	FROM #__N88_BetList t
-		INNER JOIN rs 
-			ON t.RefNo = rs.RefNo AND t.TpId = rs.TpId AND t.GameType = rs.GameType
+			INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+	) r
+	WHERE @PageIndex < 0 OR @PageSize <= 0 OR RowNumber BETWEEN @RowStart AND @RowEnd
+	ORDER BY RowNumber
 
-	SELECT t.RowNumber, t.RefNo, t.TransTime
-		,t.Stake, t.BasedStake
-		,t.PlayerWinLoss, t.BasedPlayerWinLoss
-		,t.ProgressiveWin, t.BasedProgressiveWin
-		,t.ProgressiveBet, t.BasedProgressiveBet
-		,t.GGR, t.BasedGGR
-		,t.TicketStatus
-	FROM #__N88_BetList t
-	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
-	ORDER BY t.RowNumber
-
-	--data in total
+	-- Total
 	SELECT
-		SUM(t.PlayerWinLoss) AS TotalPlayerWinLoss, SUM(t.BasedPlayerWinLoss) AS TotalBasedPlayerWinLoss
-		,SUM(t.ProgressiveWin) AS TotalProgressiveWin, SUM(t.BasedProgressiveWin) AS TotalBasedProgressiveWin
-		,SUM(t.ProgressiveBet) AS TotalProgressiveBet, SUM(t.BasedProgressiveBet) AS TotalBasedProgressiveBet
-		,SUM(t.GGR) AS TotalGGR, SUM(t.BasedGGR) AS TotalBasedGGR
+		CONVERT(MONEY, SUM(t.PlayerWinLoss / e.MultipleBy))				AS TotalPlayerWinLoss
+		,CONVERT(MONEY, SUM(t.PlayerWinLoss * e.Rate / e.MultipleBy))	AS TotalBasedPlayerWinLoss
+		,CONVERT(MONEY, SUM(t.ProgressiveWin / e.MultipleBy))			AS TotalProgressiveWin
+		,CONVERT(MONEY, SUM(t.ProgressiveWin * e.Rate / e.MultipleBy))	AS TotalBasedProgressiveWin
+		,CONVERT(MONEY, SUM(t.ProgressiveBet / e.MultipleBy))			AS TotalProgressiveBet
+		,CONVERT(MONEY, SUM(t.ProgressiveBet * e.Rate / e.MultipleBy))	AS TotalBasedProgressiveBet
+		,CONVERT(MONEY, SUM(t.GGR / e.MultipleBy))						AS TotalGGR
+		,CONVERT(MONEY, SUM(t.GGR * e.Rate / e.MultipleBy))				AS TotalBasedGGR
 	FROM #__N88_BetList t
+		INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 
+	DROP TABLE #__Exchange
 	DROP TABLE #__N88_BetList
-
 END
 GO
