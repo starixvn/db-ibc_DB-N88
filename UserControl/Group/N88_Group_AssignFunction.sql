@@ -22,24 +22,25 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20220615@Kos: Handle SELECT INTO using temp table [RedmineID: #174035]
 
-	Param's Explanation: 
-		• @Value	: is xml 
+	Param's Explanation:
+		• @Value	: is xml
 			<ROOT>
 				<FunctionPolicy FunctionId="1" SiteId="1" Policy="2"></FunctionPolicy>
 				<FunctionPolicy FunctionId="2" SiteId="1" Policy="2"></FunctionPolicy>
 			</ROOT>
 		• @ErrCode :
-			= 0: super create master successfully.
-			> 0: Specific Error.
+			= 0: super create master successfully
+			> 0: Specific Error
 
 		*** WRITE LOG template:
-		Main: 
+		Main:
 			<root><xml path="r" />
 				<row item="GroupId" alias="g" />
 				<row item="SiteId" alias="s" />
 			</root>
-		Sub: 
+		Sub:
 			<root><xml path="r/z" />
 				<row item="FunctionId" alias="f" />
 				<row item="Policy" alias="p" />
@@ -56,15 +57,21 @@ BEGIN
 		,@logSPData		NVARCHAR(MAX)
 		,@logSPDataOld	NVARCHAR(MAX)
 		,@xml			XML
-    
+
 	SET @startRun = GETDATE()
-	 
+
 	-- write log before update
 	DECLARE @tempData VARCHAR(5000)
-	
+
+	CREATE TABLE #TempData (
+		FunctionId	SMALLINT,
+		Policy		TINYINT,
+		GroupId		SMALLINT
+	)
+
 	-- Data xml for write log
-	SELECT FunctionId, Policy,GroupId
-	INTO #TempData
+	INSERT INTO #TempData (FunctionId, Policy, GroupId)
+	SELECT FunctionId, Policy, GroupId
 	FROM dbo.N88_GroupFunction AS gf WITH(NOLOCK)
 	WHERE gf.GroupId = @GroupId AND gf.SiteId = @SiteId
 
@@ -181,5 +188,7 @@ BEGIN
 		@Data			= @logSPData,
 		@OldData		= @logSPDataOld,
 		@Duration		= @Duration
+
+	DROP TABLE #TempData
 END
 GO
