@@ -20,6 +20,7 @@ AS
 		- 20200818@Percy: Change output format of daily mode [RedmineID: #137395]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - change from N88_RptWinloss to N88_SumWinloss - [RedmineID: #155334]
 		- 20211118@Percy: Change code to get Active Players [RedmineID: #161048]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		. ViewBy:
@@ -32,12 +33,19 @@ BEGIN
 
 	DECLARE @SiteId INT
 
-	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
+	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME, @TpCurrencyIds VARCHAR(MAX)
 
 	CREATE TABLE #UserActivities (WinlostDate DATE, CustId INT, IsActive BIT, IsNewlyRegister BIT)
 	CREATE CLUSTERED INDEX CIX_WinlostDate ON #UserActivities (WinlostDate, CustId)
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
+		)
+
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
@@ -54,7 +62,7 @@ BEGIN
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 			WHERE r.TransTime >= @FromDateTimeGMT AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND r.SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 			GROUP BY DATEADD(HOUR, @TimeZone, TransTime), CustId
 		) AS a
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
@@ -67,7 +75,7 @@ BEGIN
 			AND c.IsTest = 0
 			AND c.SiteId = @SiteId
 			AND NOT EXISTS (SELECT 1 FROM #UserActivities u WHERE c.CustId = u.CustId)
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 	END
 
 	-- Return data

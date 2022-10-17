@@ -10,7 +10,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_Deposit_Detail]
 	,@IsSortAsc			BIT = 1
 	,@PageIndex			INT = 1
 	,@PageSize			INT = 50
-	,@NRows				INT = 0 OUTPUT
+	,@NRows				INT = 0 OUTpUT
 AS
 
 /*
@@ -26,6 +26,7 @@ AS
 		- 20210401@Percy: Add Currency, Aff Code columns [RedmineID: #150876]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@SortbyId:
@@ -44,9 +45,16 @@ BEGIN
 
 	DECLARE @SiteId INT
 
-	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
+	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME, @TpCurrencyIds VARCHAR(MAX)
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(Tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = t.value
+		)
+
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
@@ -59,10 +67,11 @@ BEGIN
 		DECLARE @FDate DATE, @TDate DATE
 		SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 		
-		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, ExchangeId INT, Rate FLOAT)
+		INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, ExchangeId, Rate)
+		SELECT FromDate, ToDate, ISNULL(Tp.TpExchangeID, e.ExchangeId), e.ExchangeId, Rate / CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 		
 		CREATE TABLE #DepositInfo (CustId INT, NoOfDeposits INT, TotalDepositAmount MONEY, FirstDepositAmount MONEY)
@@ -76,13 +85,13 @@ BEGIN
 			WHERE CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
 				AND Status = 3
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		)
 		INSERT INTO #DepositInfo (CustId, NoOfDeposits, TotalDepositAmount, FirstDepositAmount)
 		SELECT CustId, SUM(NoOfDeposits), SUM(TotalDepositAmount * e.Rate), SUM(FirstDepositAmount * e.Rate)
 		FROM CTE_DepositInfo d
-			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY CustId
 
 		SELECT @NRows = COUNT(1)
@@ -166,19 +175,20 @@ BEGIN
 				FROM #DepositInfo d
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 					INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
-					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
+					LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.TpExchangeId = c.CurrencyId
+					INNER JOIN bodb02.dbo.Exchange e WITH(NOLOCK) ON e.ExchangeId = ISNULL(tp.ExchangeId, c.CurrencyId)
 					LEFT JOIN #Affiliate a ON c.CustId = a.CustId
 					LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) r
 		) t
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 		
 		DROP TABLE #Affiliate
 		DROP TABLE #DepositInfo
-		DROP TABLE #Exchange
+		DROP TABLE #TpExchange
 	END
 END
 GO

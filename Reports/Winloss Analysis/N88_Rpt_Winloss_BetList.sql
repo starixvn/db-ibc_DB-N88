@@ -33,6 +33,7 @@ AS
 		- 20220222@Percy: Get data from TpBetRecord_bk [RedmineID: #167823]
 		- 20220518@Percy: Set GGR = 0 for 9W Sports [RedmineID: #172917]
 		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@SortbyId:
@@ -154,18 +155,19 @@ BEGIN
 	END
 
 	-- Get Exchange
-	DECLARE @CurrencyId INT
-	SELECT  @CurrencyId = c.CurrencyId
+	DECLARE @CurrencyId INT,  @TpCurrencyId INT
+	SELECT  @CurrencyId = ISNULL(tp.ExchangeId, c.CurrencyId), @TpCurrencyId = c.CurrencyId
 	FROM dbo.Customer c WITH (NOLOCK)
+		LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.TpExchangeId = c.CurrencyId
 	WHERE c.CustId = CAST(@CustId AS INT)
 
 	DECLARE @MinDate DATE, @MaxDate DATE
 	SELECT  @MinDate = MIN(ExchangeDate), @MaxDate = MAX(ExchangeDate) FROM #__N88_BetList
 
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, Rate FLOAT, MultipleBy FLOAT, PRIMARY KEY (FromDate))
+	CREATE TABLE #__TpExchange (FromDate DATE, ToDate DATE, Rate FLOAT, MultipleBy FLOAT, PRIMARY KEY (FromDate))
 	
-	INSERT INTO #__Exchange (FromDate, ToDate, Rate, MultipleBy)
-	SELECT FromDate, ToDate, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+	INSERT INTO #__TpExchange (FromDate, ToDate, Rate, MultipleBy)
+	SELECT FromDate, ToDate, Rate, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
 	WHERE e.ExchangeId = @CurrencyId
 
@@ -212,7 +214,7 @@ BEGIN
 			,CONVERT(MONEY, t.GGR / e.MultipleBy)						AS GGR
 			,CONVERT(MONEY, t.GGR * e.Rate / e.MultipleBy)				AS BasedGGR
 		FROM #__N88_BetList t
-			INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 	) r
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR RowNumber BETWEEN @RowStart AND @RowEnd
 	ORDER BY RowNumber
@@ -228,9 +230,9 @@ BEGIN
 		,CONVERT(MONEY, SUM(t.GGR / e.MultipleBy))						AS TotalGGR
 		,CONVERT(MONEY, SUM(t.GGR * e.Rate / e.MultipleBy))				AS TotalBasedGGR
 	FROM #__N88_BetList t
-		INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 
-	DROP TABLE #__Exchange
+	DROP TABLE #__TpExchange
 	DROP TABLE #__N88_BetList
 END
 GO

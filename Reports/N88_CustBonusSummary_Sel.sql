@@ -19,29 +19,38 @@ AS
 
 	Revisions:
 		- 20220412@Percy: Initialize SP [RedmineID: #171245]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 */
 
 BEGIN
 	SET NOCOUNT ON
 
 	-- Data on GMT+0 --> convert timezone
-	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME
+	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME, @TpCurrencyIds VARCHAR(MAX)
 	SELECT	@FromDateTimeGMT0 = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 			,@ToDateTimeGMT0 = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
+
+	SELECT @TpCurrencyIds = 
+	(
+		SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(tp.TpExchangeId, t.Value)), ',')
+		FROM STRING_SPLIT(@CurrencyIds, ',') t 
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
+	)
 
 	-- Get Exchange
 	DECLARE @tmpFDate DATE = DATEADD(DAY, -1, @FromDate), @tmpTDate DATE = DATEADD(DAY, 1, @ToDate)
 	
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
-	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-	SELECT FromDate, ToDate, ExchangeId, Rate
+	CREATE TABLE #__TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, ExchangeId INT, Rate FLOAT)
+	INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, ExchangeId, Rate)
+	SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), e.ExchangeId, Rate
 	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFDate, @tmpTDate, @DisplayCurrency, '') e
+		LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 	WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 	SELECT b.BonusDate, b.DataSource, b.BonusType
 		,CONVERT(VARCHAR(100), ISNULL(ISNULL(ISNULL(ed.EventName, b.BonusCode), bt.BonusTypeName), 'Unidentified')) AS BonusCode
 		,CONVERT(VARCHAR(300), ISNULL(ed.EventName, p.Description)) AS BonusName, b.BonusStatus
-		,b.CustId, b.CurrencyId
+		,b.CustId, e.TpExchangeId
 		,SUM(BetCount), SUM(b.BonusAmount) AS BonusAmount, SUM(b.BonusAmount * e.Rate) AS BasedBonusAmount
 	FROM (
 		SELECT b.DataSource, b.BonusType, b.BonusCode, b.BonusStatus, b.CustId, b.CurrencyId
@@ -58,7 +67,7 @@ BEGIN
 		FROM dbo.CustBonusSummary b WITH (NOLOCK)
 		WHERE b.BonusTime >= @FromDateTimeGMT0 AND b.BonusTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 			AND b.SiteId = @SiteId
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 			AND 1 = CASE
 						WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusStatus <> 2 THEN 0 -- 2 = Approved
 						WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusStatus <> 0 THEN 0 -- 0 = Success
@@ -73,7 +82,7 @@ BEGIN
 			,CONVERT(INT, CASE WHEN b.DataSource = 'DrawLog' THEN b.BonusCode END)
 	) b
 		INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0
-		INNER JOIN #__Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		INNER JOIN #__TpExchange e ON b.CurrencyId = e.TpExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		LEFT JOIN dbo.N88_f_BonusType() bt ON b.DataSource = bt.DataSource AND ISNULL(b.BonusType, 0) = bt.DBTypeId
 		LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId AND b.DataSource IN ('BonusInfo', 'RebateMLog')
 		LEFT JOIN dbo.EventDraw ed WITH (NOLOCK) ON b.EventId = ed.EventId AND ed.SiteId = @SiteId AND b.DataSource IN ('DrawLog')
@@ -81,6 +90,6 @@ BEGIN
 	GROUP BY  b.BonusDate, b.DataSource, b.BonusType
 		,CONVERT(VARCHAR(100), ISNULL(ISNULL(ISNULL(ed.EventName, b.BonusCode), bt.BonusTypeName), 'Unidentified'))
 		,CONVERT(VARCHAR(300), ISNULL(ed.EventName, p.Description)), b.BonusStatus
-		,b.CustId, b.CurrencyId
+		,b.CustId, e.TpExchangeId
 END
 GO

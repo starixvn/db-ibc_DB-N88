@@ -10,7 +10,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Marketing_BonusClaimed_Detail]
 	,@IsSortAsc			BIT = 1
 	,@PageIndex			INT = 1
 	,@PageSize			INT = 50
-	,@NRows				INT = 0 OUTPUT
+	,@NRows				INT = 0 OUTpUT
 AS
 
 /*
@@ -32,6 +32,7 @@ AS
 		- 20220214@Percy: Add @SortbyId = 0 for default sort  [RedmineID: #164724]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: 171245]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@SortbyId:
@@ -49,11 +50,18 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT, @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
+	DECLARE @SiteId INT, @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME, @TpCurrencyIds VARCHAR(MAX)
 	DECLARE @FDate DATE, @TDate DATE
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(Tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = t.value
+		)
+
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
@@ -63,10 +71,11 @@ BEGIN
 		SELECT  @FromDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
-		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
-		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
+		INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ISNULL(Tp.TpExchangeID, e.ExchangeId), Rate, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		DECLARE @RowStart INT, @RowEnd INT
@@ -133,10 +142,10 @@ BEGIN
 					AND SiteId = @SiteId
 					AND Status = 3 -- Approved
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) d
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY d.CustId
 
 			CREATE TABLE #WithdrawalInfo (CustId INT, Amount MONEY)
@@ -149,10 +158,10 @@ BEGIN
 					AND SiteId = @SiteId
 					AND Status = 6 -- Approved
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) w
-				INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY w.CustId
 		END
 
@@ -161,7 +170,7 @@ BEGIN
 			INNER JOIN (SELECT CustId, BonusCode FROM #tmpBonus GROUP BY CustId, BonusCode) b ON c.CustId = b.CustId
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT RowId, BonusCode, Username, Currency, RegTime, SignupUrl, AffCode, TotalDepositAmount, TotalWithdrawalAmount, TotalBonusAmount
 		FROM (
@@ -208,7 +217,8 @@ BEGIN
 					,ISNULL(b.Amount, 0) AS TotalBonusAmount
 				FROM dbo.Customer c WITH (NOLOCK)
 					INNER JOIN dbo.Customer ag WITH (NOLOCK) ON c.AgentId = ag.CustId
-					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
+					LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.TpExchangeId = c.CurrencyId
+					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON ISNULL(tp.ExchangeId, c.CurrencyId) = e.ExchangeId
 					LEFT JOIN #Affiliate a ON c.CustId = a.CustId
 					LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
 					INNER JOIN (
@@ -220,14 +230,14 @@ BEGIN
 					LEFT JOIN #WithdrawalInfo w ON w.CustId = c.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) r
 		) t
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 
 		DROP TABLE #Affiliate
 		DROP TABLE #DepositInfo
-		DROP TABLE #Exchange
+		DROP TABLE #TpExchange
 		DROP TABLE #tmpBonus
 		DROP TABLE #WithdrawalInfo
 	END

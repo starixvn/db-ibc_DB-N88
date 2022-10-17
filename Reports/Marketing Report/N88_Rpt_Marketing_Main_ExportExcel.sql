@@ -36,12 +36,13 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20220518@Percy: Remove CR & RR information if Date Range is one date [RedmineID: #172917]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 */
 
 BEGIN
 	SET NOCOUNT ON
 	
-	DECLARE @SiteId INT
+	DECLARE @SiteId INT, @TpCurrencyIds VARCHAR(MAX)
 	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME
 	DECLARE @FromDateMTD DATETIME, @ToDateMTD DATETIME, @FromDateMTDGMT0 DATETIME, @ToDateMTDGMT0 DATETIME
 	DECLARE @OfficialLaunchDate DATETIME, @OfficialLaunchDateGMT DATETIME
@@ -88,6 +89,13 @@ BEGIN
 	*/
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(Tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = t.value
+		)
+
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
@@ -125,14 +133,14 @@ BEGIN
 		SELECT CustId, 0 FROM dbo.N88_SumWinloss WITH (NOLOCK)
 		WHERE TransTime >= @FromDateTimeGMT0 AND TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 			AND SiteId = @SiteId
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), Currency) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), Currency) + ',%'
 		GROUP BY CustId
 
 		INSERT INTO @ActiveCustomer (CustId, IsMTD)
 		SELECT CustId, 1 FROM dbo.N88_SumWinloss WITH (NOLOCK)
 		WHERE TransTime >= @FromDateMTDGMT0 AND TransTime < DATEADD(DAY, 1, @ToDateMTDGMT0)
 			AND SiteId = @SiteId
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), Currency) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), Currency) + ',%'
 		GROUP BY CustId
 
 		SELECT
@@ -151,7 +159,7 @@ BEGIN
 		WHERE c.IsTest = 0
 
 		-- Exchange
-		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId TINYINT, Rate FLOAT, MultipleBy FLOAT)
+		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId TINYINT, Rate FLOAT, MultipleBy FLOAT)
 
 		-- Deposit/Withdrawal
 		CREATE TABLE #DepositUsers (CustId INT, Deposit MONEY, FirstDeposit MONEY, IsMTD TINYINT, PRIMARY KEY (CustId, IsMTD))
@@ -174,10 +182,11 @@ BEGIN
 					,@B_FDate = DATEADD(DAY, -1, @FromDateMTD), @A_TDate = DATEADD(DAY, 1, @ToDateMTD)
 					,@tmpFDateGMT0 = @FromDateMTDGMT0, @tmpTDateGMT0 = DATEADD(DAY, 1, @ToDateMTDGMT0)
 
-			DELETE #Exchange
-			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
-			SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+			DELETE #TpExchange
+			INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+			SELECT FromDate, ToDate, ISNULL(Tp.TpExchangeID, e.ExchangeId), Rate, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@B_FDate, @A_TDate, @DisplayCurrency, '') e
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = e.ExchangeId
 			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 			-- DepositInfo
@@ -196,14 +205,14 @@ BEGIN
 					AND CreateTime >= @tmpFDateGMT0 AND CreateTime < @tmpTDateGMT0
 					AND SiteId = @SiteId
 					AND Status = 3 -- Approved
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
 					,CustId
 					,CurrencyId
 			) d
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY d.CustId
 
 			-- WithdrawalInfo
@@ -221,14 +230,14 @@ BEGIN
 					AND CreateTime >= @tmpFDateGMT0 AND CreateTime < @tmpTDateGMT0
 					AND SiteId = @SiteId
 					AND Status = 6 -- Approved
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
 					,CustId
 					,CurrencyId
 			) w
-				INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY w.CustId
 
 			-- Bonus
@@ -302,7 +311,7 @@ BEGIN
 			) w ON w.CustId = c.CustId
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, DataType)
 		VALUES
@@ -323,7 +332,7 @@ BEGIN
 		
 		DROP TABLE #tmpBonus
 		DROP TABLE #DepositUsers
-		DROP TABLE #Exchange
+		DROP TABLE #TpExchange
 		DROP TABLE #WithdrawalUsers
 
 		DECLARE @CR FLOAT, @RR FLOAT, @MTD_CR FLOAT, @MTD_RR FLOAT
@@ -412,7 +421,7 @@ BEGIN
 				LEFT JOIN dbo.N88_f_SignupURL() s ON cg.SignupUrl = s.SignupUrl AND s.SiteId = @SiteId
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			GROUP BY
 				CONVERT(NVARCHAR(200),
 					CASE

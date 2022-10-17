@@ -23,22 +23,30 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20220214@Percy: Apply SignupURL function [RedmineID: #164724]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 */
 
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT, @tmpFromDate DATE, @tmpToDate DATE
+	DECLARE @SiteId INT, @tmpFromDate DATE, @tmpToDate DATE, @TpCurrencyIds VARCHAR(MAX)
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 			,@CompareFromDateTimeGMT DATETIME, @CompareToDateTimeGMT DATETIME
 
 	DECLARE @DepositAmount MONEY, @CompareDepositAmount MONEY
 
-	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT)
 	CREATE TABLE #DepositInfo (CustId INT, FirstDepositAmount MONEY, TotalDepositAmount MONEY, IsCompared BIT)
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(Tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = t.value
+		)
+
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
@@ -54,10 +62,11 @@ BEGIN
 		BEGIN
 			SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
 		
-			DELETE #Exchange
-			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+			DELETE #TpExchange
+			INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate)
+			SELECT FromDate, ToDate, ISNULL(Tp.TpExchangeID, e.ExchangeId), Rate / CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
 			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = e.ExchangeId
 			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 			
 			INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount, IsCompared)
@@ -71,10 +80,10 @@ BEGIN
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND SiteId = @SiteId
 					AND Status = 3 -- Approved
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) d
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY d.CustId
 		END
 		
@@ -82,10 +91,11 @@ BEGIN
 		BEGIN
 			SELECT @tmpFromDate = DATEADD(DAY, -1, @CompareFromDate), @tmpToDate = DATEADD(DAY, 1, @CompareToDate)
 		
-			DELETE #Exchange
-			INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-			SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+			DELETE #TpExchange
+			INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate)
+			SELECT FromDate, ToDate, ISNULL(Tp.TpExchangeID, e.ExchangeId), Rate / CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
 			FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = e.ExchangeId
 			WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 			
 			INSERT INTO #DepositInfo (CustId, FirstDepositAmount, TotalDepositAmount, IsCompared)
@@ -99,10 +109,10 @@ BEGIN
 					AND CreateTime >= @CompareFromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 					AND SiteId = @SiteId
 					AND Status = 3 -- Approved
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 			) d
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY d.CustId
 		END
 
@@ -112,7 +122,7 @@ BEGIN
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 		WHERE 
 			c.IsTest = 0
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Detail by Signup URL
 		CREATE TABLE #Affiliate (CustId INT)
@@ -161,7 +171,7 @@ BEGIN
 				ELSE cg.SignupUrl END AS SignupUrl
 			,SUM(d.FirstDepositAmount) AS FirstDepositAmount
 			,SUM(d.TotalDepositAmount) AS TotalDepositAmount
-			,COUNT(DISTINCT d.CustId) AS DepositPlayers
+			,COUNT(DISTINCT d.CustId) AS DeposiTplayers
 		FROM #DepositInfo d
 			INNER JOIN dbo.Customer c with (nolock) on d.CustId = c.CustId
 			INNER JOIN dbo.Customer ag with (nolock) on c.AgentId = ag.CustId
@@ -171,7 +181,7 @@ BEGIN
 		WHERE d.IsCompared = 0
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		GROUP BY
 			CASE
 				WHEN a.CustId IS NOT NULL THEN 'AFF'
@@ -191,7 +201,7 @@ BEGIN
 
 		DROP TABLE #Affiliate
 		DROP TABLE #DepositInfo
-		DROP TABLE #Exchange
+		DROP TABLE #TpExchange
 	END
 END
 GO

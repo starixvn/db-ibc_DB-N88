@@ -30,6 +30,7 @@ AS
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@GroupBy
@@ -40,13 +41,13 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT, @BonusTypeId INT, @BonusTypeName VARCHAR(100)
+	DECLARE @SiteId INT, @BonusTypeId INT, @BonusTypeName VARCHAR(100), @TpCurrencyIds VARCHAR(MAX)
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
-	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MulipleBy FLOAT)
 
 	CREATE TABLE #BonusType (DBTypeId SMALLINT, BonusTypeId SMALLINT, BonusTypeName VARCHAR(100), DataSource VARCHAR(100), IsSelected BIT)
+	CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MulipleBy FLOAT)
 	CREATE TABLE #DepositInfo (Date DATE, CustId INT, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (Date DATE, CustId INT, Amount MONEY)
 	CREATE TABLE #BonusInfo (
@@ -55,6 +56,13 @@ BEGIN
 	)
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
+		)
+		
 		SELECT @BonusName = ISNULL(@BonusName, '')
 
 		INSERT INTO #BonusType (DBTypeId, BonusTypeId, BonusTypeName, DataSource, IsSelected)
@@ -69,9 +77,10 @@ BEGIN
 
 		SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
 
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate, MulipleBy)
-		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+		INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate, MulipleBy)
+		SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), Rate, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		-- Data on GMT+0 --> convert timezone
@@ -100,11 +109,11 @@ BEGIN
 				WHERE SettledTime >= @FromDateTimeGMT AND SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND SiteId = @SiteId
 					AND BonusId > 0
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), Currency) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), Currency) + ',%'
 				GROUP BY BonusId, CustId, Currency, CONVERT(DATE, DATEADD(HOUR, -4, SettledTime))
 				UNION SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL -- run this query first
 			) t
-				INNER JOIN #Exchange e ON t.Currency = e.ExchangeId AND t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON t.Currency = e.TpExchangeId AND t.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY t.BonusId, t.CustId
 			
 			INSERT INTO #BonusInfo (Date, BonusCode, BonusName, BonusTypeId, BonusTypeName, StartTime, EndTime, PStatus, CustId, Status
@@ -129,7 +138,7 @@ BEGIN
 					AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND b.SiteId = @SiteId
 					AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, -4, b.CreateTime))
@@ -138,7 +147,7 @@ BEGIN
 				UNION SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL -- run this query first
 			) b
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0
-				INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON b.CurrencyId = e.TpExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 				INNER JOIN #BonusType bt ON b.DBTypeId = bt.DBTypeId AND bt.DataSource = 'BonusInfo' AND bt.IsSelected = 1
 				INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
 			WHERE ',' + @BonusStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(5), p.Status) + ',%'
@@ -193,14 +202,14 @@ BEGIN
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND Status = 3 -- Approved
 					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 					,CustId, CurrencyId
 				UNION SELECT NULL, NULL, NULL, NULL, NULL -- run this query first
 			) d
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE d.Date END, d.CustId
 
 			INSERT INTO #WithdrawalInfo (Date, CustId, Amount)
@@ -215,14 +224,14 @@ BEGIN
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 					AND Status = 6 -- Approved
 					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				GROUP BY
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime))
 					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 					,CustId, CurrencyId
 				UNION SELECT NULL, NULL, NULL, NULL, NULL -- run this query first
 			) w
-				INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+				INNER JOIN #TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			GROUP BY CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE w.Date END, w.CustId
 		END
 
@@ -301,7 +310,7 @@ BEGIN
 	DROP TABLE #BonusInfo
 	DROP TABLE #BonusType
 	DROP TABLE #DepositInfo
-	DROP TABLE #Exchange
+	DROP TABLE #TpExchange
 	DROP TABLE #tmpResult
 	DROP TABLE #WithdrawalInfo
 END

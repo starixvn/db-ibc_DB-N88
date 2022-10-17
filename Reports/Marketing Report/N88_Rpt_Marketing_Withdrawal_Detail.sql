@@ -22,6 +22,7 @@ AS
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
 		- 20210401@Percy: Add Currency column [RedmineID: #150876]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@SortbyId:
@@ -34,7 +35,7 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT
+	DECLARE @SiteId INT, @TpCurrencyIds VARCHAR(MAX)
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 
@@ -42,6 +43,13 @@ BEGIN
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
+		)
+
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
 			INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
@@ -62,17 +70,18 @@ BEGIN
 					AND w.SiteId = @SiteId
 					AND w.Status = 6
 					AND w.CreateTime >= @FromDateTimeGMT AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			) w
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
 			AND w.CustId IS NOT NULL
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		
-		CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
+		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, ExchangeId INT, Rate FLOAT)
+		INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, ExchangeId, Rate)
+		SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), e.ExchangeId, Rate / CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END 
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 		
 		DECLARE @RowStart INT, @RowEnd INT
@@ -89,10 +98,10 @@ BEGIN
 				AND SiteId = @SiteId
 				AND Status = 6
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) w
-			INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY w.CustId
 
 		SELECT RowId, UserName, Currency, RegTime, NoOfWithdrawals, TotalWithdrawalAmount
@@ -118,16 +127,17 @@ BEGIN
 					,w.BetCount
 					,w.Amount
 				FROM dbo.Customer c WITH (NOLOCK)
-					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
+					LEFT JOIN dbo.TpExchange tp WITH (NOLOCK) ON tp.TpExchangeId = c.CurrencyId
+					INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON ISNULL(tp.ExchangeId, c.CurrencyId) = e.ExchangeId
 					INNER JOIN #WithdrawalInfo w ON c.CustId = w.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) c
 		) r
 		WHERE RowId BETWEEN @RowStart AND @RowEnd
 
-		DROP TABLE #Exchange
+		DROP TABLE #TpExchange
 		DROP TABLE #WithdrawalInfo
 	END
 END
