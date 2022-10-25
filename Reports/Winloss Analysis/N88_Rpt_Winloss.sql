@@ -696,7 +696,7 @@ BEGIN
 			,BasedBonusAmount
 		)
 		SELECT 
-			CurrencyId
+			ISNULL(t.ExchangeId, r.CurrencyId) AS CurrencyId
 			,CurrencyId
 			,SUM(TurnOver)
 			,SUM(NetTurnOver)
@@ -731,8 +731,10 @@ BEGIN
 			,SUM(BonusAmount) AS BonusAmount
 			,SUM(BasedBonusAmount) AS BasedBonusAmount
 		FROM #__N88_SumWinloss r
+			LEFT JOIN dbo.TpExchange t WITH(NOLOCK) ON t.TpExchangeId = r.CurrencyId
 		GROUP BY
-			CurrencyId
+			ISNULL(t.ExchangeId, r.CurrencyId)
+			,r.CurrencyId
 	END
 	-- by player
 	ELSE IF (@GroupBy = 5)
@@ -1222,7 +1224,7 @@ BEGIN
 	FROM #__FinalResult r
 		LEFT JOIN dbo.TpExchange t WITH(NOLOCK) ON t.TpExchangeId = r.CurrencyId
 	WHERE @PageIndex < 0 OR @PageSize <= 0 OR (RowNumber BETWEEN @RowStart AND @RowEnd) 
-	ORDER BY RowNumber, CurrencyId
+	ORDER BY RowNumber, r.CurrencyId
 
 	-- total
 	SELECT
