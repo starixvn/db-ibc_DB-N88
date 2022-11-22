@@ -26,6 +26,7 @@ AS
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@SortbyId:
@@ -55,9 +56,10 @@ BEGIN
 	SELECT  @FromDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @FromDate))
 			,@ToDateTimeGMT0		= DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
-	DECLARE @SiteId INT, @CurrencyId INT
-	SELECT  @SiteId = c.SiteId, @CurrencyId = c.CurrencyId
+	DECLARE @SiteId INT, @CurrencyId INT, @TpCurrencyId INT
+	SELECT  @SiteId = c.SiteId, @TpCurrencyId = c.CurrencyId, @CurrencyId = ISNULL(tp.ExchangeId, c.CurrencyId)
 	FROM dbo.Customer c WITH(NOLOCK)
+		LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.TpExchangeId = c.CurrencyId
 	WHERE c.CustId = @CustId
 
 	-- 1. Get raw data
@@ -89,8 +91,8 @@ BEGIN
 
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (GameType)
 
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
-	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
+	CREATE TABLE #__TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
+	CREATE CLUSTERED INDEX CIX_Exchange ON #__TpExchange (TpExchangeId, FromDate)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
 
@@ -100,9 +102,10 @@ BEGIN
 	---- by winlostdate
 	IF (@FilterBy = 1)
 	BEGIN
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
-		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+		INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), Rate, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE e.ExchangeId = @CurrencyId
 
 		INSERT INTO #__N88_SumWinloss
@@ -152,11 +155,11 @@ BEGIN
 				AND r.SiteId = @SiteId
 				AND r.CustId = @CustId
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
-				AND r.Currency = @CurrencyId
+				AND r.Currency = @TpCurrencyId
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)), r.Currency, r.GameType
 		) r
-			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
+			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
 		GROUP BY GameType
 
 		-- Get commission for 9W (filter by winlostdate only)
@@ -174,7 +177,7 @@ BEGIN
 				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
 				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
 			) t
-				INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.ExchangeId
+				INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.TpExchangeId
 
 			UPDATE t
 			SET t.Commission = -@Commission, t.BasedCommission = -@BasedCommission
@@ -192,9 +195,10 @@ BEGIN
 
 		SELECT @MinDate = DATEADD(DAY, -1, @MinDate), @MaxDate = DATEADD(DAY, 1, @MaxDate)
 
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
-		SELECT FromDate, ToDate, ExchangeId, Rate, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+		INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), Rate, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE e.ExchangeId = @CurrencyId
 
 		INSERT INTO #__N88_SumWinloss
@@ -244,15 +248,15 @@ BEGIN
 				AND r.SiteId = @SiteId
 				AND r.CustId = @CustId
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
-				AND r.Currency = @CurrencyId
+				AND r.Currency = @TpCurrencyId
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)),r.Currency, r.GameType
 		) r
-			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
+			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
 		GROUP BY GameType
 	END
 
-	DROP TABLE #__Exchange
+	DROP TABLE #__TpExchange
 
 	-- 2. Calc temp result
 	CREATE TABLE #__tmpResult 

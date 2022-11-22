@@ -32,6 +32,7 @@ AS
 		- 20211118@Percy: Add LogAdminAdjustWallet table [RedmineID: #161048]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 */
 
 BEGIN
@@ -72,6 +73,12 @@ BEGIN
 			
 			SELECT @i = @i + 1
 		END
+
+		--Update currency
+		UPDATE t
+			SET t.CurrencyId = tp.ExchangeId
+		FROM #tmpBonus t
+			INNER JOIN dbo.TPExchange tp WITH(NOLOCK) ON t.CurrencyId = tp.TPExchangeId
 
 		-- Summary by Currency
 		SELECT b.CurrencyId AS Currency

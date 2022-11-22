@@ -32,6 +32,7 @@ AS
 		- 20220214@Percy: Return TransactionType column [RedmineID: #164724]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral [RedmineID: #171245]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param's Explanation:
 		@SortbyId:
@@ -48,17 +49,24 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT, @DataSource VARCHAR(100)
+	DECLARE @SiteId INT, @DataSource VARCHAR(100), @TPCurrencyIds VARCHAR(MAX)
 
 	DECLARE @FromDateTimeGMT DATETIME, @ToDateTimeGMT DATETIME
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
-	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #TPExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MulipleBy FLOAT)
 
 	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, DataSource VARCHAR(128), TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1))
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 
 	BEGIN
+		SELECT @TPCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(tp.TPExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TPExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
+		)
+
 		IF @BonusTypeId <> 0
 			SELECT @DataSource = DataSource FROM dbo.N88_f_BonusType() WHERE BonusTypeId = @BonusTypeId
 
@@ -69,9 +77,10 @@ BEGIN
 
 		SELECT @tmpFromDate = DATEADD(DAY, -1, @FromDate), @tmpToDate = DATEADD(DAY, 1, @ToDate)
 
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate / CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+		INSERT INTO #TPExchange (FromDate, ToDate, TpExchangeId, Rate)
+		SELECT FromDate, ToDate, ISNULL(tp.TPExchangeID, e.ExchangeId), Rate / CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@tmpFromDate, @tmpToDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TPExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		-- Data on GMT+0 --> convert timezone
@@ -94,7 +103,7 @@ BEGIN
 				AND b.SiteId = @SiteId
 				AND b.BonusCode = @BonusCode
 				AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 		END
 
 		-- RebateMLog
@@ -107,7 +116,7 @@ BEGIN
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
 				AND BonusCode = @BonusCode
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 		END
 
 		-- DrawLog
@@ -122,7 +131,7 @@ BEGIN
 				AND d.SiteId = @SiteId
 				AND e.SiteId = @SiteId
 				AND e.EventName = @BonusCode
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 		END
 
 		-- AdjustmentInfo
@@ -138,7 +147,7 @@ BEGIN
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 2 -- Approved
 				AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
 		END
@@ -156,7 +165,7 @@ BEGIN
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 0 -- Success
 				AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 		END
@@ -170,7 +179,7 @@ BEGIN
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND SettleTime >= @FromDateTimeGMT AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 4 -- Settled
 		END
 
@@ -183,7 +192,7 @@ BEGIN
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 		END
 
 		-- Referral
@@ -195,7 +204,7 @@ BEGIN
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 		END
 
 		-- Deposit, Withdrawal
@@ -207,7 +216,7 @@ BEGIN
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND Status = 3 -- Approved
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 
 			INSERT INTO #WithdrawalInfo (CustId, CurrencyId, ExchangeDate, Amount)
@@ -217,7 +226,7 @@ BEGIN
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND Status = 6 -- Approved
 				AND SiteId = @SiteId
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 			GROUP BY CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		END
 
@@ -232,17 +241,17 @@ BEGIN
 		UPDATE b
 		SET b.Amount = b.Amount * e.Rate
 		FROM #BonusInfo b
-			INNER JOIN #Exchange e ON b.CurrencyId = e.ExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #TPExchange e ON b.CurrencyId = e.TpExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 
 		UPDATE d
 		SET d.Amount = d.Amount * e.Rate
 		FROM #DepositInfo d
-			INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #TPExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 
 		UPDATE w
 		SET w.Amount = w.Amount * e.Rate
 		FROM #WithdrawalInfo w
-			INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #TPExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 	END
 
 	DECLARE @RowStart INT, @RowEnd INT
@@ -304,7 +313,7 @@ BEGIN
 
 	DROP TABLE #BonusInfo
 	DROP TABLE #DepositInfo
-	DROP TABLE #Exchange
+	DROP TABLE #TPExchange
 	DROP TABLE #WithdrawalInfo
 END
 GO

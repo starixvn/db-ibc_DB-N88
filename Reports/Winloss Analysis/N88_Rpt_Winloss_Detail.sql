@@ -31,12 +31,13 @@ AS
 		- 20210715@Percy: Exclude Jackpot, Contribition from Win Loss (GGR) [RedmineID: #158438]
 		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 */
 
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @FDate DATE, @TDate DATE
+	DECLARE @FDate DATE, @TDate DATE, @TpCurrencyIds VARCHAR(MAX)
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
 
 	-- Data on GMT+0 --> convert timezone
@@ -75,20 +76,27 @@ BEGIN
 	)
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (CustId)
 
-	CREATE TABLE #__Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
-	CREATE CLUSTERED INDEX CIX_Exchange ON #__Exchange (ExchangeId, FromDate)
+	CREATE TABLE #__TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
+	CREATE CLUSTERED INDEX CIX_Exchange ON #__TpExchange (TpExchangeId, FromDate)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
 
 	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
 	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
+	SELECT @TpCurrencyIds = 
+	(
+		SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(tp.TpExchangeId, t.Value)), ',')
+		FROM STRING_SPLIT(@CurrencyIds, ',') t 
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
+	)
 	
 	---- by winlostdate
 	IF (@FilterBy = 1)
 	BEGIN
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
-		SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+		INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+		SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		INSERT INTO #__N88_SumWinloss
@@ -127,7 +135,7 @@ BEGIN
 			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
@@ -144,7 +152,7 @@ BEGIN
 				,r.Currency
 				,r.GameType
 		) r
-			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
+			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
 		GROUP BY rptDate, GameType, CustId, Currency
 
 		-- Get commission for 9W (filter by winlostdate only)
@@ -163,7 +171,7 @@ BEGIN
 				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
 				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
 			) t
-				INNER JOIN #__Exchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.ExchangeId
+				INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.TpExchangeId
 			GROUP BY t.CustId, t.rptDate
 
 			UPDATE t
@@ -183,9 +191,10 @@ BEGIN
 
 		SELECT @MinDate = DATEADD(DAY, -1, @MinDate), @MaxDate = DATEADD(DAY, 1, @MaxDate)
 
-		INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END
+		INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate)
+		SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END
 		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@MinDate, @MaxDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		INSERT INTO #__N88_SumWinloss
@@ -224,7 +233,7 @@ BEGIN
 			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
@@ -241,15 +250,16 @@ BEGIN
 				,r.Currency
 				,r.GameType
 		) r
-			INNER JOIN #__Exchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.ExchangeId
+			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
 		GROUP BY rptDate, GameType, CustId, Currency
 	END
 
 	-- Reset Exchange
-	DELETE #__Exchange
-	INSERT INTO #__Exchange (FromDate, ToDate, ExchangeId, Rate, MultipleBy)
-	SELECT FromDate, ToDate, ExchangeId, CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+	DELETE #__TpExchange
+	INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+	SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
 	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
 	WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 	
 	-- Deposit/Withdrawal
@@ -274,7 +284,7 @@ BEGIN
 				AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.SiteId) + ',%'
 				AND d.Status = 3
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
 					ISNULL(@UserName,'') = ''
@@ -286,7 +296,7 @@ BEGIN
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), c.CustId, c.CurrencyId
 				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
 		) d
-			INNER JOIN #__Exchange e ON d.CurrencyId = e.ExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #__TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY d.rptDate, d.CustId, d.CurrencyId
 		
 		-- Withdrawal
@@ -309,7 +319,7 @@ BEGIN
 				AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.SiteId) + ',%'
 				AND w.Status = 6
-				AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
 				AND (
 					ISNULL(@UserName,'') = ''
@@ -321,7 +331,7 @@ BEGIN
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), c.CustId, c.CurrencyId
 				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
 		) w
-			INNER JOIN #__Exchange e ON w.CurrencyId = e.ExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+			INNER JOIN #__TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		GROUP BY w.rptDate, w.CustId, w.CurrencyId
 	END
 
@@ -360,7 +370,7 @@ BEGIN
 		,c.UserName
 		,c.TpUserName
 		,c.TpSystemUserName
-		,c.CurrencyId
+		,ISNULL(tp.ExchangeId, c.CurrencyId) AS CurrencyId
 		,s.SiteName
 		,r.TurnOver
 		,r.NetTurnOver
@@ -381,15 +391,15 @@ BEGIN
 		INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 		INNER JOIN dbo.ServerInfo s WITH (NOLOCK) ON c.SiteId = s.SiteId
 		INNER JOIN dbo.TpGameType g WITH (NOLOCK) ON r.GameType = g.Type
-		INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON c.CurrencyId = e.ExchangeId
+		LEFT JOIN dbo.TpExchange tp WITH (NOLOCK) ON tp.TpExchangeId = c.CurrencyId
 	ORDER BY
 		r.rptDate DESC
 		,s.SiteName
 		,g.TypeName
-		,e.currency
+		,ISNULL(tp.ExchangeId, c.CurrencyId)
 		,c.UserName
 
-	DROP TABLE #__Exchange
+	DROP TABLE #__TpExchange
 	DROP TABLE #__N88_SumWinloss
 END
 GO

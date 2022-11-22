@@ -34,6 +34,7 @@ AS
 		- 20220214@Percy: Total Active Users base on Registration Date [RedmineID: #164724]
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: 171245]
+		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -43,7 +44,7 @@ AS
 BEGIN
 	SET NOCOUNT ON
 
-	DECLARE @SiteId INT, @FDate DATE, @TDate DATE, @B_FDate DATE, @A_TDate DATE
+	DECLARE @SiteId INT, @FDate DATE, @TDate DATE, @B_FDate DATE, @A_TDate DATE, @TpCurrencyIds VARCHAR(MAX)
 
 	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME
 			,@CompareFromDateTimeGMT0 DATETIME, @CompareToDateTimeGMT0 DATETIME
@@ -61,7 +62,7 @@ BEGIN
 			,@WithdrawalAmount MONEY, @CompareWithdrawalAmount MONEY
 			,@BonusAmountClaimeds MONEY, @CompareBonusAmountClaimeds MONEY
 
-	CREATE TABLE #Exchange (FromDate DATE, ToDate DATE, ExchangeId INT, Rate FLOAT)
+	CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT)
 
 	SELECT @SiteId = SiteId
 	FROM dbo.ServerInfo s WITH (NOLOCK)
@@ -77,6 +78,13 @@ BEGIN
 		
 	-- General Info
 	BEGIN
+		SELECT @TpCurrencyIds = 
+		(
+			SELECT STRING_AGG(CONVERT(VARCHAR(50), ISNULL(Tp.TpExchangeId, t.Value)), ',')
+			FROM STRING_SPLIT(@CurrencyIds, ',') t 
+				LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = t.value
+		)
+		
 		SELECT
 			@TotalUsers = COUNT(CASE 
 									WHEN @FromLastXDaysGMT0 IS NULL THEN 1
@@ -101,13 +109,13 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE SiteId = @SiteId
 			AND IsTest = 0
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @TotalActiveUsers = COUNT(1)
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
-			AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
+			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			AND EXISTS (
 				SELECT 1 
 				FROM dbo.N88_SumWinloss r WITH (NOLOCK) 
@@ -136,9 +144,11 @@ BEGIN
 				,@B_FDate = DATEADD(DAY, -1, @CompareFromDate), @A_TDate = DATEADD(DAY, 1, @CompareToDate)
 				,@tmpFDateGMT0 = @CompareFromDateTimeGMT0, @tmpTDateGMT0 = DATEADD(DAY, 1, @CompareToDateTimeGMT0)
 
-		DELETE #Exchange
-		INSERT INTO #Exchange (FromDate, ToDate, ExchangeId, Rate)
-		SELECT FromDate, ToDate, ExchangeId, Rate FROM bodb02.dbo.Lrf_f_GetExchangeRate(@B_FDate, @A_TDate, @DisplayCurrency, '') e
+		DELETE #TpExchange
+		INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate)
+		SELECT FromDate, ToDate, ISNULL(Tp.TpExchangeID, e.ExchangeId), Rate 
+		FROM bodb02.dbo.Lrf_f_GetExchangeRate(@B_FDate, @A_TDate, @DisplayCurrency, '') e
+			LEFT JOIN dbo.TpExchange Tp WITH(NOLOCK) ON Tp.ExchangeId = e.ExchangeId
 		WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
 
 		-- Deposit Users
@@ -154,7 +164,7 @@ BEGIN
 					AND d.Status = 3 -- Approved
 					AND d.WinlostDate BETWEEN @B_FDate AND @A_TDate
 					AND d.CreateTime >= @tmpFDateGMT0 AND d.CreateTime < @tmpTDateGMT0
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				GROUP BY d.CustId
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
@@ -171,7 +181,7 @@ BEGIN
 				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 				WHERE TransTime >= @tmpFDateGMT0 AND TransTime < @tmpTDateGMT0
 					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				GROUP BY CustId
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
@@ -185,7 +195,7 @@ BEGIN
 			SELECT SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmount
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
-				INNER JOIN #Exchange e ON d.CurrencyId = e.ExchangeId
+				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId
 					AND CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) BETWEEN e.FromDate AND e.ToDate
 			WHERE d.WinlostDate BETWEEN @B_FDate AND @A_TDate
 				AND d.CreateTime >= @tmpFDateGMT0 AND d.CreateTime < @tmpTDateGMT0
@@ -201,7 +211,7 @@ BEGIN
 			SELECT SUM(w.Amount * e.Rate / CASE WHEN w.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS WithdrawalAmount
 			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON w.CustId = c.CustId
-				INNER JOIN #Exchange e ON w.CurrencyId = e.ExchangeId
+				INNER JOIN #TpExchange e ON w.CurrencyId = e.TpExchangeId
 					AND CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) BETWEEN e.FromDate AND e.ToDate
 			WHERE w.WinlostDate BETWEEN @B_FDate AND @A_TDate
 				AND w.CreateTime >= @tmpFDateGMT0 AND w.CreateTime < @tmpTDateGMT0
@@ -236,7 +246,7 @@ BEGIN
 				FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 				WHERE TransTime >= @tmpFDateGMT0 AND TransTime < @tmpTDateGMT0
 					AND SiteId = @SiteId
-					AND ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
+					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				GROUP BY CustId
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
@@ -246,7 +256,7 @@ BEGIN
 		SELECT @i = @i + 1
 	END
 
-	DROP TABLE #Exchange
+	DROP TABLE #TpExchange
 
 	-- Return data
 	SELECT @TotalUsers AS TotalUsers
