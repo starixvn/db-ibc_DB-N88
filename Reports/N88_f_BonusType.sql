@@ -18,6 +18,7 @@ AS
 		- 20220311@Percy: Add new type: Manual Bonus [RedmineID: #169823]
 		- 20220325@Percy: Add new type: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Add new type: Referral [RedmineID: #170390]
+		- 20230301@Malcolm: Add new type: ReferralLog [RedmineID: #183930]
 */
 
 RETURN
@@ -44,5 +45,6 @@ RETURN
 		,(1, 104, 'Verification Reward', 'CustVerificationReward') -- Phone Reward
 		,(2, 104, 'Verification Reward', 'CustVerificationReward') -- Email Reward
 		,(0, 105, 'Referral', 'ReferralMLog')
+		,(0, 105, 'Referral', 'ReferralLog')
 	) AS t (DBTypeId, BonusTypeId, BonusTypeName, DataSource)
 GO
