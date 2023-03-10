@@ -8,3 +8,4 @@ Reports\Marketing Report\N88_Rpt_Marketing_BusinessPerformance.sql
 Reports\Marketing Report\N88_Rpt_Marketing_Main_ExportExcel.sql
 Reports\Marketing Report\N88_Rpt_Marketing_NewlyRegisteredUsers.sql
 Reports\Marketing Report\N88_Rpt_Marketing_NewlyRegisteredUsers_Detail.sql
+Reports\Marketing Report\N88_Rpt_Marketing_Deposit.sql
