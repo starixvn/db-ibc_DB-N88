@@ -33,6 +33,7 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230301@Malcolm: Add new type: ReferralLog [RedmineID: #183930]
 
 	Param's Explanation:
 		@SortbyId:
@@ -195,16 +196,29 @@ BEGIN
 				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 		END
 
-		-- Referral
-		IF @DataSource = 'ReferralMLog'
+		-- Referral (ReferralMLog)
+		IF @BonusTypeId = 105 OR @DataSource = 'ReferralMLog'
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), ReferralAmount
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), ReferralAmount, 'ReferralMLog',-2
 			FROM dbo.ReferralMLog WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId
 				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+		END
+
+		-- Referral (ReferralLog)
+		IF @BonusTypeId = 105 OR @DataSource = 'ReferralLog'
+		BEGIN
+			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
+			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), ReferralFreeCredit, 'ReferralLog',-1
+			FROM dbo.ReferralLog WITH (NOLOCK)
+			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+				AND RewardStatus = 1
 		END
 
 		-- Deposit, Withdrawal
@@ -292,6 +306,8 @@ BEGIN
 						WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.TransactionType = 2 THEN '3rd Minus'
 						WHEN b.DataSource = 'CustVerificationReward' AND b.TransactionType = 1 THEN 'Phone'
 						WHEN b.DataSource = 'CustVerificationReward' AND b.TransactionType = 2 THEN 'Email'
+						WHEN b.DataSource = 'ReferralMLog' AND b.TransactionType = -2 THEN 'Referral_Agent'
+						WHEN b.DataSource = 'ReferralLog' AND b.TransactionType = -1 THEN 'Referral_Sub'
 						END
 					) AS TransactionType
 			FROM dbo.Customer c WITH (NOLOCK)

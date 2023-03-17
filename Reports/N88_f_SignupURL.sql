@@ -13,6 +13,7 @@ AS
 
 	Revisions:
 		- 20220214@Percy: Initialize function [RedmineID: #164724]
+		- 20230303@Malcolm: Add Signup URL for N8B [RedmineID: #183738]
 */
 
 RETURN
@@ -43,7 +44,8 @@ RETURN
 	UNION ALL SELECT 3, 2, 'Bong88/Viva88', NULL
 	UNION ALL SELECT 3, 3, 'Bwing.com', SignupURL
 				FROM (VALUES
-						('www.bwing.com'), ('bwing.com'), ('m.bwing.com'), ('release.bwing.com'), ('mrelease.bwing.com')
+						 ('soidongbw.com'), ('m.soidongbw.com'), ('thethaobw.com'), ('m.thethaobw.com')
+						,('www.bwing.com'), ('bwing.com'), ('m.bwing.com'), ('release.bwing.com'), ('mrelease.bwing.com')
 						,('www.bwinghotevent.club'), ('m.bwinghotevent.club'), ('https://www.bwinghotevent.club')
 						,('www.bomtanhoitu.live'), ('m.bomtanhoitu.live'), ('https://www.bomtanhoitu.live')
 						,('www.bwing01.com'), ('www.bwing02.com'), ('www.bwing03.com'), ('www.bwing04.com'), ('www.bwing05.com')

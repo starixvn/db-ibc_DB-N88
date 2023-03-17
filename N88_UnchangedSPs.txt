@@ -1,1 +1,11 @@
+Reports\Bonus Info\N88_Rpt_BonusInfo.sql
 Reports\N88_BonusType_Sel.sql
+Reports\N88_CustBonusSummary_Sel.sql
+Reports\Winloss Analysis\N88_Rpt_Winloss.sql
+Reports\Marketing Report\N88_Rpt_Marketing_BonusClaimed.sql
+Reports\Marketing Report\N88_Rpt_Marketing_BonusClaimed_Detail.sql
+Reports\Marketing Report\N88_Rpt_Marketing_BusinessPerformance.sql
+Reports\Marketing Report\N88_Rpt_Marketing_Main_ExportExcel.sql
+Reports\Marketing Report\N88_Rpt_Marketing_NewlyRegisteredUsers.sql
+Reports\Marketing Report\N88_Rpt_Marketing_NewlyRegisteredUsers_Detail.sql
+Reports\Marketing Report\N88_Rpt_Marketing_Deposit.sql
