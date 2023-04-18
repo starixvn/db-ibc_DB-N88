@@ -5,7 +5,7 @@ GO
 ALTER PROCEDURE [dbo].[N88_Rpt_BonusInfo_Detail]
 	@LicenseeId			INT
 	,@BonusTypeId		SMALLINT = 0
-	,@BonusCode			VARCHAR(50)
+	,@BonusInfo			XML 
 	,@ClaimedStatusIds	VARCHAR(MAX) = ''
 	,@FromDate			DATE
 	,@ToDate			DATE
@@ -34,17 +34,27 @@ AS
 		- 20220412@Percy: Integrate new bonus: Referral [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230301@Malcolm: Add new type: ReferralLog [RedmineID: #183930]
+		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
 
 	Param's Explanation:
 		@SortbyId:
 			. 1 = Username
-			. 2 = Claim Date
-			. 3 = Bonus Amount Claimed
-			. 4 = Transaction Type
-			. 5 = Deposit Amount
-			. 6 = Withdrawal Amount
-			. 7 = Status
-			. 8 = Percent Completion
+			. 2 = SabaId
+			. 3 = Currency
+			. 4 = BonusCode
+			. 5 = BonusType
+			. 6 = BonusName
+			. 7 = Claim Date
+			. 8 = Bonus Amount Claimed
+			. 9 = Transaction Type
+			. 10 = Deposit Amount
+			. 11 = Withdrawal Amount
+			. 12 = Status
+			. 13 = Percent Completion
+
+		@BonusInfo = <root>
+						<r bonuscode="" bonustypeid=""/>
+					 </root>
 */
 
 BEGIN
@@ -56,9 +66,14 @@ BEGIN
 	DECLARE @tmpFromDate DATE, @tmpToDate DATE
 	CREATE TABLE #TPExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MulipleBy FLOAT)
 
-	CREATE TABLE #BonusInfo (CustId INT, CurrencyId INT, Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, DataSource VARCHAR(128), TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1))
+	CREATE TABLE #BonusInfo (
+		CustId INT, CurrencyId INT, BonusCode VARCHAR(50), BonusName VARCHAR(50),BonusTypeId SMALLINT, BonusTypeName VARCHAR(50) ,Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, DataSource VARCHAR(128), 
+		TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1)
+	)
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
+	CREATE TABLE #BonusInfoDetail (BonusCode VARCHAR(50), BonusTypeId SMALLINT, BonusTypeName VARCHAR(50), DataSource VARCHAR(100))
+	CREATE TABLE #Currency (CurrencyId INT, CurrencyName NVARCHAR(50))
 
 	BEGIN
 		SELECT @TPCurrencyIds = 
@@ -68,8 +83,20 @@ BEGIN
 				LEFT JOIN dbo.TPExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
 		)
 
-		IF @BonusTypeId <> 0
-			SELECT @DataSource = DataSource FROM dbo.N88_f_BonusType() WHERE BonusTypeId = @BonusTypeId
+		INSERT INTO #Currency (CurrencyId, CurrencyName)
+		EXEC bodb02.dbo.Lrf_CurrencySel
+
+		--Get BonusInfo	
+		INSERT INTO #BonusInfoDetail (BonusCode, BonusTypeId)
+		SELECT DISTINCT
+			ISNULL(t.c.value('@bonuscode', 'VARCHAR(50)'), '')AS BonusCode
+			,t.c.value('@bonustypeid', 'SMALLINT')
+		FROM @BonusInfo.nodes('root/r') t(c)
+
+		UPDATE b
+			SET b.BonusTypeName = f.BonusTypeName, b.DataSource = f.DataSource
+		FROM #BonusInfoDetail b
+			INNER JOIN dbo.N88_f_BonusType() f ON f.BonusTypeId = b.BonusTypeId
 
 		SELECT @SiteId = SiteId
 		FROM dbo.ServerInfo s WITH (NOLOCK)
@@ -89,136 +116,145 @@ BEGIN
 				,@ToDateTimeGMT = DATEADD(HOUR, -@TimeZone, CONVERT(DATETIME, @ToDate))
 
 		-- BonusInfo
-		IF @BonusTypeId = 0 OR @DataSource = 'BonusInfo'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail b WHERE b.DataSource = 'BonusInfo')
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, Status, ExchangeDate, ClaimedDate, Amount, PercentagedCompletion)
-			SELECT b.CustId, b.CurrencyId, b.Status, DATEADD(HOUR, -4, b.CreateTime), DATEADD(HOUR, @TimeZone, b.CreateTime), b.BonusAmount
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, Status, ExchangeDate, ClaimedDate, Amount, PercentagedCompletion)
+			SELECT b.CustId, b.BonusCode, p.Description AS BonusName, bi.BonusTypeId, bi.BonusTypeName, b.CurrencyId, b.Status, DATEADD(HOUR, -4, b.CreateTime), DATEADD(HOUR, @TimeZone, b.CreateTime), b.BonusAmount
 				,CASE
 					WHEN cbr.Turnover > cbr.Rollover THEN 1.0
 					WHEN cbr.Rollover = 0 THEN 0.0
-					ELSE cbr.Turnover / cbr.Rollover END AS PercentagedCompletion
+					ELSE cbr.Turnover / cbr.Rollover 
+				END AS PercentagedCompletion
 			FROM dbo.BonusInfo b WITH (NOLOCK)
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusCode = b.BonusCode AND bi.DataSource = 'BonusInfo'
 				LEFT JOIN dbo.CustBonusRollover cbr WITH (NOLOCK) ON b.BonusId = cbr.BonusId
+				LEFT JOIN dbo.Promotion p WITH(NOLOCK) ON p.BonusCode = b.BonusCode
 			WHERE b.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND b.CreateTime >= @FromDateTimeGMT AND b.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND b.SiteId = @SiteId
-				AND b.BonusCode = @BonusCode
 				AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
 				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
 		END
 
 		-- RebateMLog
-		IF @BonusTypeId = 0 OR @DataSource = 'RebateMLog'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail b WHERE b.DataSource = 'RebateMLog')
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), RedeemAmount
-			FROM dbo.RebateMLog WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND BonusCode = @BonusCode
-				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount)
+			SELECT r.CustId, r.BonusCode, p.Description AS BonusName, bi.BonusTypeId, bi.BonusTypeName, r.CurrencyId, DATEADD(HOUR, -4, r.CreateTime), DATEADD(HOUR, @TimeZone, r.CreateTime), r.RedeemAmount
+			FROM dbo.RebateMLog r WITH (NOLOCK)
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusCode = r.BonusCode AND bi.DataSource = 'RebateMLog'
+				LEFT JOIN dbo.Promotion p WITH(NOLOCK) ON p.BonusCode = r.BonusCode
+			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
 		END
 
 		-- DrawLog
-		IF @DataSource = 'DrawLog'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail b WHERE b.DataSource = 'DrawLog')
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
-			SELECT d.CustId, d.CurrencyId, DATEADD(HOUR, -4, d.DrawTime), DATEADD(HOUR, @TimeZone, d.DrawTime), d.Amount
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount)
+			SELECT d.CustId, e.EventName AS BonusCode, e.EventName AS BonusName, bi.BonusTypeId, bi.BonusTypeName, d.CurrencyId, DATEADD(HOUR, -4, d.DrawTime), DATEADD(HOUR, @TimeZone, d.DrawTime), d.Amount
 			FROM dbo.DrawLog d WITH (NOLOCK)
 				INNER JOIN dbo.EventDraw e WITH (NOLOCK) ON d.EventId = e.EventId
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusCode = e.EventName AND bi.DataSource = 'DrawLog'
 			WHERE d.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND d.DrawTime >= @FromDateTimeGMT AND d.DrawTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND d.SiteId = @SiteId
 				AND e.SiteId = @SiteId
-				AND e.EventName = @BonusCode
 				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 		END
 
 		-- AdjustmentInfo
-		IF @BonusTypeId = 101 OR @DataSource = 'AdjustmentInfo'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 101)
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), 'AdjustmentInfo', AdjustType
-				,Amount * CASE
-							WHEN AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
-							WHEN AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
+			SELECT a.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName , a.CurrencyId, DATEADD(HOUR, -4, a.CreateTime), DATEADD(HOUR, @TimeZone, a.CreateTime), 'AdjustmentInfo', AdjustType
+				,a.Amount * CASE
+							WHEN a.AdjustType IN (1, 3) THEN 1 -- Credit, Increase bonus
+							WHEN a.AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 							ELSE 0 END
-			FROM dbo.AdjustmentInfo WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
+			FROM dbo.AdjustmentInfo a WITH (NOLOCK)
+			INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 101
+			WHERE a.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND a.CreateTime >= @FromDateTimeGMT AND a.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND a.SiteId = @SiteId
 				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND Status = 2 -- Approved
-				AND 1 = CASE WHEN CreateTime < '2021-10-31 16:00' OR AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
+				AND a.Status = 2 -- Approved
+				AND 1 = CASE WHEN a.CreateTime < '2021-10-31 16:00' OR a.AdjustType IN (3, 4) THEN 1 ELSE 0 END -- From 1 Nov 2021 (GMT+8), just get Increase & Decrease bonus
 		END
 
 		-- LogAdminAdjustWallet
-		IF @BonusTypeId = 101 OR @DataSource = 'LogAdminAdjustWallet'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 101) 
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), 'LogAdminAdjustWallet', Direction
-				,Amount * CASE
-							WHEN Direction = 1 THEN 1 -- 3rd Add
-							WHEN Direction = 2 THEN -1 -- 3rd Minus
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
+			SELECT l.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, l.CurrencyId, DATEADD(HOUR, -4, l.CreateTime), DATEADD(HOUR, @TimeZone, l.CreateTime), 'LogAdminAdjustWallet', l.Direction
+				,l.Amount * CASE
+							WHEN l.Direction = 1 THEN 1 -- 3rd Add
+							WHEN l.Direction = 2 THEN -1 -- 3rd Minus
 							ELSE 0 END
-			FROM dbo.LogAdminAdjustWallet WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND Status = 0 -- Success
-				AND CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
+			FROM dbo.LogAdminAdjustWallet l WITH (NOLOCK)
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 101
+			WHERE l.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND l.CreateTime >= @FromDateTimeGMT AND l.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND l.SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.CurrencyId) + ',%'
+				AND l.Status = 0 -- Success
+				AND l.CreateTime < '2021-10-31 16:00' -- only get data before 1 Nov 2021 (GMT+8)
 		END
 
 		-- VIPUpgradeReview
-		IF @DataSource = 'VIPUpgradeReview'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE DataSource = 'VIPUpgradeReview')
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, SettleTime), DATEADD(HOUR, @TimeZone, SettleTime), UpgradeAmount
-			FROM dbo.VipUpgradeReview WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND SettleTime >= @FromDateTimeGMT AND SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND Status = 4 -- Settled
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount)
+			SELECT v.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, v.CurrencyId, DATEADD(HOUR, -4, v.SettleTime), DATEADD(HOUR, @TimeZone, v.SettleTime), v.UpgradeAmount
+			FROM dbo.VipUpgradeReview v WITH (NOLOCK)
+			INNER JOIN #BonusInfoDetail bi ON bi.DataSource = 'VIPUpgradeReview'
+			WHERE v.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND v.SettleTime >= @FromDateTimeGMT AND v.SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND v.SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), v.CurrencyId) + ',%'
+				AND v.Status = 4 -- Settled
 		END
 
 		-- CustVerificationRewardDetail
-		IF @DataSource = 'CustVerificationReward'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE DataSource = 'CustVerificationReward')
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, RewardTime), DATEADD(HOUR, @TimeZone, RewardTime), 'CustVerificationReward', RewardType, RewardAmount
-			FROM dbo.CustVerificationRewardDetail WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND RewardTime >= @FromDateTimeGMT AND RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
+			SELECT c.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, c.CurrencyId, DATEADD(HOUR, -4, c.RewardTime), DATEADD(HOUR, @TimeZone, c.RewardTime), 'CustVerificationReward', c.RewardType, c.RewardAmount
+			FROM dbo.CustVerificationRewardDetail c WITH (NOLOCK)
+			INNER JOIN #BonusInfoDetail bi ON bi.DataSource = 'CustVerificationReward'
+			WHERE c.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND c.RewardTime >= @FromDateTimeGMT AND c.RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND c.SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		END
 
 		-- Referral (ReferralMLog)
-		IF @BonusTypeId = 105 OR @DataSource = 'ReferralMLog'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 105) 
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), ReferralAmount, 'ReferralMLog',-2
-			FROM dbo.ReferralMLog WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
+			SELECT r.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, r.CurrencyId, DATEADD(HOUR, -4, r.CreateTime), DATEADD(HOUR, @TimeZone, r.CreateTime), r.ReferralAmount, 'ReferralMLog',-2
+			FROM dbo.ReferralMLog r WITH (NOLOCK)
+			INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 105
+			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
 		END
 
 		-- Referral (ReferralLog)
-		IF @BonusTypeId = 105 OR @DataSource = 'ReferralLog'
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 105)
 		BEGIN
-			INSERT INTO #BonusInfo (CustId, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
-			SELECT CustId, CurrencyId, DATEADD(HOUR, -4, CreateTime), DATEADD(HOUR, @TimeZone, CreateTime), ReferralFreeCredit, 'ReferralLog',-1
-			FROM dbo.ReferralLog WITH (NOLOCK)
-			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
-				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
-				AND SiteId = @SiteId
-				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
-				AND RewardStatus = 1
+			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
+			SELECT r.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, r.CurrencyId, DATEADD(HOUR, -4, r.CreateTime), DATEADD(HOUR, @TimeZone, r.CreateTime), r.ReferralFreeCredit, 'ReferralLog',-1
+			FROM dbo.ReferralLog r WITH (NOLOCK)
+			INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 105
+			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
+				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
+				AND r.SiteId = @SiteId
+				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.CurrencyId) + ',%'
+				AND r.RewardStatus = 1
 		END
 
 		-- Deposit, Withdrawal
@@ -274,28 +310,38 @@ BEGIN
 	SELECT @NRows = COUNT(1) FROM #BonusInfo
 
 	-- Return
-	SELECT RowId, UserName, @BonusCode AS BonusCode, ClaimedDate, ClaimedAmount, TransactionType, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
+	SELECT RowId, UserName, CurrencyName AS Currency, TpUserName AS [SabaId], BonusCode, BonusName, BonusTypeName AS [BonusType], ClaimedDate, ClaimedAmount, TransactionType, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
 	FROM (
-		SELECT UserName, ClaimedDate, ClaimedAmount, TransactionType, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
+		SELECT UserName, CurrencyName, TpUserName, BonusCode, BonusName, BonusTypeName, ClaimedDate, ClaimedAmount, TransactionType, TotalDeposit, TotalWithdrawal, Status, PercentagedCompletion
 			,ROW_NUMBER() OVER(ORDER BY
 							 CASE WHEN @SortbyId = 1 AND @IsSortAsc = 1 THEN UserName END ASC
 							,CASE WHEN @SortbyId = 1 AND @IsSortAsc = 0 THEN UserName END DESC
-							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN ClaimedDate END ASC
-							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN ClaimedDate END DESC
-							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN ClaimedAmount END ASC
-							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN ClaimedAmount END DESC
-							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN TransactionType END ASC
-							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN TransactionType END DESC
-							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN TotalDeposit END ASC
-							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN TotalDeposit END DESC
-							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN TotalWithdrawal END ASC
-							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN TotalWithdrawal END DESC
-							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN Status END ASC
-							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN Status END DESC
-							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN PercentagedCompletion END ASC
-							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN PercentagedCompletion END DESC) AS RowId
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 1 THEN TpUserName END ASC
+							,CASE WHEN @SortbyId = 2 AND @IsSortAsc = 0 THEN TpUserName END DESC
+							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 1 THEN CurrencyName END ASC
+							,CASE WHEN @SortbyId = 3 AND @IsSortAsc = 0 THEN CurrencyName END DESC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 1 THEN BonusCode END ASC
+							,CASE WHEN @SortbyId = 4 AND @IsSortAsc = 0 THEN BonusCode END DESC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 1 THEN BonusTypeName END ASC
+							,CASE WHEN @SortbyId = 5 AND @IsSortAsc = 0 THEN BonusTypeName END DESC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 1 THEN BonusName END ASC
+							,CASE WHEN @SortbyId = 6 AND @IsSortAsc = 0 THEN BonusName END DESC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 1 THEN ClaimedDate END ASC
+							,CASE WHEN @SortbyId = 7 AND @IsSortAsc = 0 THEN ClaimedDate END DESC
+							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 1 THEN ClaimedAmount END ASC
+							,CASE WHEN @SortbyId = 8 AND @IsSortAsc = 0 THEN ClaimedAmount END DESC
+							,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 1 THEN TransactionType END ASC
+							,CASE WHEN @SortbyId = 9 AND @IsSortAsc = 0 THEN TransactionType END DESC
+							,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 1 THEN TotalDeposit END ASC
+							,CASE WHEN @SortbyId = 10 AND @IsSortAsc = 0 THEN TotalDeposit END DESC
+							,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 1 THEN TotalWithdrawal END ASC
+							,CASE WHEN @SortbyId = 11 AND @IsSortAsc = 0 THEN TotalWithdrawal END DESC
+							,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 1 THEN Status END ASC
+							,CASE WHEN @SortbyId = 12 AND @IsSortAsc = 0 THEN Status END DESC
+							,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN PercentagedCompletion END ASC
+							,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN PercentagedCompletion END DESC) AS RowId
 		FROM (
-			SELECT c.UserName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
+			SELECT c.UserName, cy.CurrencyName, c.TpUserName, b.BonusCode, b.BonusName, b.BonusTypeName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
 				,CONVERT(VARCHAR(100),
 					CASE
 						WHEN b.DataSource = 'AdjustmentInfo' AND b.TransactionType = 1 THEN 'Credit'
@@ -312,6 +358,7 @@ BEGIN
 					) AS TransactionType
 			FROM dbo.Customer c WITH (NOLOCK)
 				INNER JOIN #BonusInfo b ON b.CustId = c.CustId
+				INNER JOIN #Currency cy ON cy.CurrencyId = c.CurrencyId
 				LEFT JOIN (
 					SELECT d.CustId, SUM(d.Amount) AS Amount
 					FROM #DepositInfo d
@@ -331,5 +378,7 @@ BEGIN
 	DROP TABLE #DepositInfo
 	DROP TABLE #TPExchange
 	DROP TABLE #WithdrawalInfo
+	DROP TABLE #BonusInfoDetail
+	DROP TABLE #Currency
 END
 GO

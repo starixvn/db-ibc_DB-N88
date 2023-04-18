@@ -31,11 +31,13 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
 
 	Param's Explanation:
 		@GroupBy
 			.1 = Bonus Code
 			.2 = Claimed Date, Bonus Code
+			.3 = Claimed Month, Bonus Code
 */
 
 BEGIN
@@ -190,7 +192,11 @@ BEGIN
 		-- Deposit, Withdrawal
 		BEGIN
 			INSERT INTO #DepositInfo (Date, CustId, Amount)
-			SELECT CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE d.Date END, d.CustId, SUM(d.Amount * e.Rate / e.MulipleBy)
+			SELECT CASE @GroupBy WHEN 1 THEN CONVERT(DATE, @FromDate)
+								 WHEN 2 THEN d.Date 
+				   ELSE FORMAT(d.Date, 'yyyy-MM-01') END
+				   ,d.CustId
+				   ,SUM(d.Amount * e.Rate / e.MulipleBy)
 			FROM (
 				SELECT
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
@@ -210,10 +216,16 @@ BEGIN
 				UNION SELECT NULL, NULL, NULL, NULL, NULL -- run this query first
 			) d
 				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE d.Date END, d.CustId
+			GROUP BY CASE @GroupBy WHEN 1 THEN CONVERT(DATE, @FromDate) 
+								   WHEN 2 THEN d.Date 
+					 ELSE FORMAT(d.Date, 'yyyy-MM-01') END, d.CustId
 
 			INSERT INTO #WithdrawalInfo (Date, CustId, Amount)
-			SELECT CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE w.Date END, w.CustId, SUM(w.Amount * e.Rate / e.MulipleBy)
+			SELECT CASE @GroupBy WHEN 1 THEN CONVERT(DATE, @FromDate) 
+								 WHEN 2 THEN w.Date 
+				   ELSE FORMAT(w.Date, 'yyyy-MM-01') END
+				   ,w.CustId
+				   ,SUM(w.Amount * e.Rate / e.MulipleBy)
 			FROM (
 				SELECT
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
@@ -232,7 +244,9 @@ BEGIN
 				UNION SELECT NULL, NULL, NULL, NULL, NULL -- run this query first
 			) w
 				INNER JOIN #TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-			GROUP BY CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE w.Date END, w.CustId
+			GROUP BY CASE @GroupBy WHEN 1 THEN CONVERT(DATE, @FromDate) 
+								   WHEN 2 THEN w.Date
+					 ELSE FORMAT(w.Date, 'yyyy-MM-01') END, w.CustId
 		END
 
 		-- Filter data
@@ -248,7 +262,9 @@ BEGIN
 			,Running, Canceled, Fulfill, OtherPlatform, Amount, GGR, ProgressiveBet, ProgressiveWin
 		)
 		SELECT b.CustId, b.BonusCode, b.BonusName, b.BonusTypeId, b.BonusTypeName, b.PStatus, b.StartTime, b.EndTime
-			,CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE b.Date END AS Date
+			,CASE @GroupBy WHEN 1 THEN CONVERT(DATE, @FromDate) 
+						   WHEN 2 THEN b.Date 
+		     ELSE FORMAT(b.Date, 'yyyy-MM-01') END AS Date
 			,SUM(CASE WHEN b.Status = 1 THEN b.BetCount ELSE 0 END) AS Running
 			,SUM(CASE WHEN b.Status = 2 THEN b.BetCount ELSE 0 END) AS Canceled
 			,SUM(CASE WHEN b.Status = 4 THEN b.BetCount ELSE 0 END) AS Fulfill
@@ -264,7 +280,9 @@ BEGIN
 				OR CHARINDEX(@BonusName, b.BonusName, 1) > 0
 			)
 		GROUP BY b.CustId, b.BonusCode, b.BonusName, b.BonusTypeId, b.BonusTypeName, b.PStatus, b.StartTime, b.EndTime
-			,CASE WHEN @GroupBy = 1 THEN CONVERT(DATE, @FromDate) ELSE b.Date END
+			,CASE @GroupBy WHEN 1 THEN CONVERT(DATE, @FromDate) 
+						   WHEN 2 THEN b.Date 
+		     ELSE FORMAT(b.Date, 'yyyy-MM-01') END
 
 		DELETE #DepositInfo WHERE CustId NOT IN (SELECT CustId FROM #tmpResult)
 		DELETE #WithdrawalInfo WHERE CustId NOT IN (SELECT CustId FROM #tmpResult)
@@ -307,6 +325,12 @@ BEGIN
 		OUTER APPLY (SELECT SUM(Amount) AS TotalDeposit FROM #DepositInfo) d
 		OUTER APPLY (SELECT SUM(Amount) AS TotalWithdrawal FROM #WithdrawalInfo) w
 
+	-- Get Bonus by Date
+	SELECT b.BonusCode, b.Date
+	FROM #BonusInfo b
+	WHERE @BonusName = '' OR CHARINDEX(@BonusName, b.BonusCode, 1) > 0 OR CHARINDEX(@BonusName, b.BonusName, 1) > 0
+	GROUP BY b.BonusCode, b.Date
+	
 	DROP TABLE #BonusInfo
 	DROP TABLE #BonusType
 	DROP TABLE #DepositInfo
