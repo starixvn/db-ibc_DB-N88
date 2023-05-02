@@ -35,6 +35,7 @@ AS
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230301@Malcolm: Add new type: ReferralLog [RedmineID: #183930]
 		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
+		- 20230504@Evan: Fix show wrong currency BDT & USD [RedmineId: #187776]
 
 	Param's Explanation:
 		@SortbyId:
@@ -73,7 +74,7 @@ BEGIN
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #BonusInfoDetail (BonusCode VARCHAR(50), BonusTypeId SMALLINT, BonusTypeName VARCHAR(50), DataSource VARCHAR(100))
-	CREATE TABLE #Currency (CurrencyId INT, CurrencyName NVARCHAR(50))
+	CREATE TABLE #Currency (CurrencyId INT, TPCurrencyId INT, CurrencyName NVARCHAR(50))
 
 	BEGIN
 		SELECT @TPCurrencyIds = 
@@ -84,7 +85,15 @@ BEGIN
 		)
 
 		INSERT INTO #Currency (CurrencyId, CurrencyName)
-		EXEC bodb02.dbo.Lrf_CurrencySel
+		EXEC bodb02.dbo.Lrf_CurrencySel	 
+
+		DELETE c FROM #Currency c WHERE c.CurrencyId NOT IN (SELECT value FROM STRING_SPLIT(@CurrencyIds,','))
+
+		--Convert To TpCurrency
+		UPDATE c
+			SET c.TPCurrencyId = ISNULL(t.TpExchangeId, c.CurrencyId)
+		FROM #Currency c
+			LEFT JOIN dbo.TPExchange t WITH(NOLOCK) ON t.ExchangeId = c.CurrencyId
 
 		--Get BonusInfo	
 		INSERT INTO #BonusInfoDetail (BonusCode, BonusTypeId)
@@ -358,7 +367,7 @@ BEGIN
 					) AS TransactionType
 			FROM dbo.Customer c WITH (NOLOCK)
 				INNER JOIN #BonusInfo b ON b.CustId = c.CustId
-				INNER JOIN #Currency cy ON cy.CurrencyId = c.CurrencyId
+				INNER JOIN #Currency cy ON cy.TPCurrencyId = c.CurrencyId
 				LEFT JOIN (
 					SELECT d.CustId, SUM(d.Amount) AS Amount
 					FROM #DepositInfo d
