@@ -54,6 +54,7 @@ AS
 		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 		- 20220608@Percy: Update GGR formula for 9W Sports & Add Group By Brand (Site) [RedmineID: #173396]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 
 	Param's Explanation:
 		@GroupBy:
@@ -353,7 +354,7 @@ BEGIN
 		FROM (
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-				,COUNT(1) AS BetCount, SUM(Amount) AS Amount
+				,COUNT(1) AS BetCount, SUM(ActualDeposit) AS Amount
 			FROM dbo.DepositInfo WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND CreateTime >= @FromDateTimeGMT0 AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)

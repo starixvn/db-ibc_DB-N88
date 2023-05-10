@@ -32,6 +32,7 @@ AS
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 
 	Param's Explanation:
 		@GroupBy
@@ -202,7 +203,7 @@ BEGIN
 					CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS Date
 					,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 					,CustId, CurrencyId
-					,SUM(Amount) AS Amount
+					,SUM(ActualDeposit) AS Amount
 				FROM dbo.DepositInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)

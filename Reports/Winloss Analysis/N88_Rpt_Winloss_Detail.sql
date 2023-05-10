@@ -32,6 +32,8 @@ AS
 		- 20220518@Percy: Add Commission for 9W Sports [RedmineID: #172917]
 		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+
 */
 
 BEGIN
@@ -276,7 +278,7 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
 				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
 				COUNT(1) AS BetCount,
-				SUM(d.Amount) AS Amount
+				SUM(d.ActualDeposit) AS Amount
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 			WHERE d.WinlostDate BETWEEN @FDate AND @TDate

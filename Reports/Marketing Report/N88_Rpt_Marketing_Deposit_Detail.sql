@@ -27,6 +27,7 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 
 	Param's Explanation:
 		@SortbyId:
@@ -79,8 +80,8 @@ BEGIN
 		;WITH CTE_DepositInfo AS (
 			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
 				,COUNT(1) AS NoOfDeposits
-				,SUM(Amount) AS TotalDepositAmount
-				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
+				,SUM(ActualDeposit) AS TotalDepositAmount
+				,SUM(CASE WHEN FirstDeposit = 1 THEN ActualDeposit ELSE 0 END) AS FirstDepositAmount
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND SiteId = @SiteId

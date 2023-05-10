@@ -36,6 +36,7 @@ AS
 		- 20230301@Malcolm: Add new type: ReferralLog [RedmineID: #183930]
 		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
 		- 20230504@Evan: Fix show wrong currency BDT & USD [RedmineId: #187776]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 
 	Param's Explanation:
 		@SortbyId:
@@ -269,7 +270,7 @@ BEGIN
 		-- Deposit, Withdrawal
 		BEGIN
 			INSERT INTO #DepositInfo (CustId, CurrencyId, ExchangeDate, Amount)
-			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(Amount)
+			SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)), SUM(ActualDeposit)
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)

@@ -34,6 +34,7 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 */
 
 BEGIN
@@ -115,8 +116,8 @@ BEGIN
 		SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate / e.MultipleBy), SUM(d.TotalDepositAmount * e.Rate / e.MultipleBy)
 		FROM (
 			SELECT CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, CustId, CurrencyId
-				,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
-				,SUM(Amount) AS TotalDepositAmount
+				,SUM(CASE WHEN FirstDeposit = 1 THEN ActualDeposit ELSE 0 END) AS FirstDepositAmount
+				,SUM(ActualDeposit) AS TotalDepositAmount
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 			WHERE WinlostDate BETWEEN @FDate AND @TDate
 				AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)

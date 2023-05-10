@@ -24,6 +24,7 @@ AS
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20220214@Percy: Apply SignupURL function [RedmineID: #164724]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 */
 
 BEGIN
@@ -73,8 +74,8 @@ BEGIN
 			SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate), 0 AS IsCompared
 			FROM (
 				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-					,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
-					,SUM(Amount) AS TotalDepositAmount
+					,SUM(CASE WHEN FirstDeposit = 1 THEN ActualDeposit ELSE 0 END) AS FirstDepositAmount
+					,SUM(ActualDeposit) AS TotalDepositAmount
 				FROM dbo.DepositInfo d WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 					AND CreateTime >= @FromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
@@ -102,8 +103,8 @@ BEGIN
 			SELECT d.CustId, SUM(d.FirstDepositAmount * e.Rate), SUM(d.TotalDepositAmount * e.Rate), 1 AS IsCompared
 			FROM (
 				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
-					,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDepositAmount
-					,SUM(Amount) AS TotalDepositAmount
+					,SUM(CASE WHEN FirstDeposit = 1 THEN ActualDeposit ELSE 0 END) AS FirstDepositAmount
+					,SUM(ActualDeposit) AS TotalDepositAmount
 				FROM dbo.DepositInfo d WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 					AND CreateTime >= @CompareFromDateTimeGMT AND CreateTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
