@@ -33,6 +33,7 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: 171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 
 	Param's Explanation:
 		@SortbyId:
@@ -136,7 +137,7 @@ BEGIN
 			INSERT INTO #DepositInfo (CustId, Amount)
 			SELECT d.CustId, SUM(d.Amount * e.Rate / e.MultipleBy)
 			FROM (
-				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(Amount) AS Amount
+				SELECT CustId, CurrencyId, CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate, SUM(ActualDeposit) AS Amount
 				FROM dbo.DepositInfo d WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @FDate AND @TDate
 					AND SiteId = @SiteId

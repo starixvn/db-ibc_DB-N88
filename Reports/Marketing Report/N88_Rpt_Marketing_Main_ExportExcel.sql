@@ -37,6 +37,7 @@ AS
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20220518@Percy: Remove CR & RR information if Date Range is one date [RedmineID: #172917]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 */
 
 BEGIN
@@ -198,8 +199,8 @@ BEGIN
 					,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS WinlostDate
 					,CustId
 					,CurrencyId
-					,SUM(CASE WHEN FirstDeposit = 1 THEN Amount ELSE 0 END) AS FirstDeposit
-					,SUM(Amount) AS Deposit
+					,SUM(CASE WHEN FirstDeposit = 1 THEN ActualDeposit ELSE 0 END) AS FirstDeposit
+					,SUM(ActualDeposit) AS Deposit
 				FROM dbo.DepositInfo WITH (NOLOCK)
 				WHERE WinlostDate BETWEEN @B_FDate AND @A_TDate
 					AND CreateTime >= @tmpFDateGMT0 AND CreateTime < @tmpTDateGMT0

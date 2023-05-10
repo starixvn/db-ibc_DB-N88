@@ -35,6 +35,7 @@ AS
 		- 20220325@Percy: Integrate new bonus: Verification Reward [RedmineID: #170390]
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: 171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -192,7 +193,7 @@ BEGIN
 		SELECT @DepositAmount = CASE WHEN @i = 1 THEN DepositAmount ELSE @DepositAmount END
 			,@CompareDepositAmount = CASE WHEN @i = 2 THEN DepositAmount ELSE @CompareDepositAmount END
 		FROM (
-			SELECT SUM(d.Amount * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmount
+			SELECT SUM(d.ActualDeposit * e.Rate / CASE WHEN d.CurrencyId IN (15, 51) THEN 1000.0 ELSE 1.0 END) AS DepositAmount
 			FROM dbo.DepositInfo d WITH (NOLOCK)
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 				INNER JOIN #TpExchange e ON d.CurrencyId = e.TpExchangeId
