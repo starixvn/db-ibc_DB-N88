@@ -36,6 +36,7 @@ AS
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: 171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param explaination:
 		- @FromLastXDays:
@@ -110,12 +111,14 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE SiteId = @SiteId
 			AND IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @TotalActiveUsers = COUNT(1)
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			AND EXISTS (
 				SELECT 1 
@@ -170,6 +173,7 @@ BEGIN
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
 			WHERE c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 		) t
 
 		-- Active Users
@@ -187,6 +191,7 @@ BEGIN
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
 			WHERE c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 		) t
 
 		-- Deposit Amount
@@ -203,6 +208,7 @@ BEGIN
 				AND d.SiteId = @SiteId
 				AND d.Status = 3
 				AND c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 		) t
 
 		-- Withdrawal Amount
@@ -219,6 +225,7 @@ BEGIN
 				AND w.SiteId = @SiteId
 				AND w.Status = 6
 				AND c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 		) t
 
 		-- Bonus Amount
@@ -252,6 +259,7 @@ BEGIN
 			) AS a
 				INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
 			WHERE c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 		) t
 
 		SELECT @i = @i + 1

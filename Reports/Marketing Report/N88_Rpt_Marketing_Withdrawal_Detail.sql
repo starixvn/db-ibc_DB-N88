@@ -23,6 +23,7 @@ AS
 		- 20210401@Percy: Add Currency column [RedmineID: #150876]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param's Explanation:
 		@SortbyId:
@@ -74,6 +75,7 @@ BEGIN
 			) w
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND w.CustId IS NOT NULL
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		
@@ -132,6 +134,7 @@ BEGIN
 					INNER JOIN #WithdrawalInfo w ON c.CustId = w.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND c.MemberType <> 3 -- Exclude Live Streamer
 					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) c
 		) r

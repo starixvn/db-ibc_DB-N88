@@ -25,6 +25,8 @@ AS
 		- 20220214@Percy: Apply SignupURL function [RedmineID: #164724]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+
 */
 
 BEGIN
@@ -121,8 +123,8 @@ BEGIN
 		SELECT SUM(CASE WHEN d.IsCompared = 0 THEN d.TotalDepositAmount ELSE 0 END) AS DepositAmount,SUM(CASE WHEN d.IsCompared = 1 THEN d.TotalDepositAmount ELSE 0 END) AS CompareDepositAmount
 		FROM #DepositInfo d
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
-		WHERE 
-			c.IsTest = 0
+		WHERE c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Detail by Signup URL
@@ -182,6 +184,7 @@ BEGIN
 		WHERE d.IsCompared = 0
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		GROUP BY
 			CASE

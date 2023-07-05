@@ -33,6 +33,7 @@ AS
 		- 20220608@Percy: Update GGR formula for 9W Sports [RedmineID: #173396]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 */
 
@@ -140,6 +141,7 @@ BEGIN
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+				AND c.MemberType <> 3
 				AND (
 					ISNULL(@UserName,'') = ''
 					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
@@ -238,6 +240,7 @@ BEGIN
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+				AND c.MemberType <> 3
 				AND (
 					ISNULL(@UserName,'') = ''
 					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
@@ -288,6 +291,7 @@ BEGIN
 				AND d.Status = 3
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+				AND c.MemberType <> 3
 				AND (
 					ISNULL(@UserName,'') = ''
 					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
@@ -323,6 +327,7 @@ BEGIN
 				AND w.Status = 6
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+				AND c.MemberType <> 3
 				AND (
 					ISNULL(@UserName,'') = ''
 					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName

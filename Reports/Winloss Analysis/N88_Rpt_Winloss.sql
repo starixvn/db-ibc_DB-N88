@@ -55,6 +55,7 @@ AS
 		- 20220608@Percy: Update GGR formula for 9W Sports & Add Group By Brand (Site) [RedmineID: #173396]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param's Explanation:
 		@GroupBy:
@@ -438,6 +439,14 @@ BEGIN
 									END
 				)
 		)
+
+	--- Exlude data of Live Streamer
+	BEGIN	
+		DELETE s
+		FROM #__N88_SumWinloss s
+			INNER JOIN dbo.Customer c WITH (NOLOCK) ON s.CustId = c.CustId 
+		WHERE c.MemberType = 3
+	END
 
 	----cal closing balance
 	BEGIN

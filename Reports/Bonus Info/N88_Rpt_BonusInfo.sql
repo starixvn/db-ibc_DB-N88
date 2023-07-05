@@ -33,6 +33,7 @@ AS
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param's Explanation:
 		@GroupBy
@@ -149,7 +150,7 @@ BEGIN
 					,CONVERT(SMALLINT, CASE WHEN ',' + @BonusTypeIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.PromotionType) + ',%' THEN b.PromotionType ELSE 0 END)
 				UNION SELECT NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL -- run this query first
 			) b
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0
+				INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0 AND c.MemberType <> 3 -- exclude data of customer live steamer
 				INNER JOIN #TpExchange e ON b.CurrencyId = e.TpExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 				INNER JOIN #BonusType bt ON b.DBTypeId = bt.DBTypeId AND bt.DataSource = 'BonusInfo' AND bt.IsSelected = 1
 				INNER JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode
