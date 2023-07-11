@@ -6,7 +6,6 @@ ALTER PROCEDURE [dbo].[N88_User_Update]
 	,@LastName NVARCHAR(50) = NULL
 	,@Email NVARCHAR(50) = NULL
 	,@DefaultBaseCurrencyId INT = NULL
-	,@DataRangeLimitation INT = NULL
 	,@GroupId SMALLINT
 	,@CurrentUserId INT
 	,@CurrentSiteId TINYINT
@@ -26,6 +25,7 @@ AS
 		- 20200314@Kos: Created [RedmineID: #129873]
 		- 20201118@Kos: Support default base currency [RedmineID: #145346]
 		- 20210715@Hogan: Apply Date Range permission [RedmineID: #158257]
+		- 20230615@Hogan: Remove Date Range permission [RedmineID: #189299]
 
 	Param's Explanation:
 		• @UserId: UserId from table Users
@@ -42,7 +42,6 @@ AS
 					<row item="Email" alias="e" />
 					<row item="DefaultBaseCurrencyId" alias="bc" />
 					<row item="DefaultBaseCurrencyCode" alias="bcc" />
-					<row item="DataRangeLimitation" alias="drl" />
 				</root>
 */
 
@@ -67,7 +66,6 @@ BEGIN
 				,u.LastName AS '@l'
 				,u.Email AS '@e'
 				,u.DefaultBaseCurrencyId AS '@bc'
-				,u.DataRangeLimitation AS '@drl'
 				,e.Code AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId
@@ -107,8 +105,7 @@ BEGIN
 		FirstName = @FirstName,
 		LastName = @LastName,
 		Email = @Email,
-		DefaultBaseCurrencyId = @DefaultBaseCurrencyId,
-		DataRangeLimitation = @DataRangeLimitation
+		DefaultBaseCurrencyId = @DefaultBaseCurrencyId
 	WHERE UserId = @UserId
 
 	-- Write log after update
@@ -121,7 +118,6 @@ BEGIN
 				,u.LastName AS '@l'
 				,u.Email AS '@e'
 				,u.DefaultBaseCurrencyId AS '@bc'
-				,u.DataRangeLimitation AS '@drl'
 				,e.Code AS '@bcc'
 			FROM dbo.N88_Users AS u WITH (NOLOCK)
 				LEFT JOIN dbo.N88_Groups AS g WITH (NOLOCK) ON u.GroupId = g.GroupId

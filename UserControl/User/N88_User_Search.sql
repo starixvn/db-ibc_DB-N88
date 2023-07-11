@@ -21,6 +21,7 @@ AS
 		- 20200314@Kos: Created [RedmineID: #129873]
 		- 20201118@Kos: Support default base currency [RedmineID: #145346]
 		- 20210715@Hogan: Apply Date Range permission [RedmineID: #158257]
+		- 20230615@Hogan: Remove Date Range permission [RedmineID: #189299]
 
 	Param's Explanation:
 		- @Environment: UAT or LIVE
@@ -223,7 +224,7 @@ BEGIN
 		,u.Email
 		,u.DefaultBaseCurrencyId
 		,e.Code AS DefaultBaseCurrencyCode
-		,u.DataRangeLimitation
+		,ust.SettingValue AS DataRangeLimitation
 		,u.userpwd
 		,us.LastLoginDate
 		,u.CreatedDate
@@ -250,6 +251,8 @@ BEGIN
 		LEFT JOIN dbo.N88_Users AS c4 WITH (NOLOCK) ON us.ModifiedBy = c4.UserId
 		LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON tmp.SiteId = s.SiteId
 		LEFT JOIN CustDB.dbo.exchange AS e WITH (NOLOCK) ON e.ExchangeId = u.DefaultBaseCurrencyId
+		LEFT JOIN dbo.N88_UserSetting AS ust WITH (NOLOCK) ON u.UserId = ust.UserId
+			AND ust.SettingKey LIKE 'LimitDays'
 	ORDER BY tmp.RowNum
 END
 GO
