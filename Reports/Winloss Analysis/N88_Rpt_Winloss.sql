@@ -20,6 +20,9 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Winloss]
 	,@TimeZone					SMALLINT = 8
 	,@SortbyId					TINYINT = 1
 	,@IsSortAsc					BIT = 1
+	,@DataLimitBy				INT= 0
+	,@IsDataLimitDesc			INT = 0
+	,@DataLimitValue			INT = 0
 	,@PageIndex					INT = 1
 	,@PageSize					INT = 50
 	,@TotalRows					INT = 0 OUTPUT
@@ -56,6 +59,7 @@ AS
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
 
 	Param's Explanation:
 		@GroupBy:
@@ -84,6 +88,16 @@ AS
 			. 16 = No. Withdrawal
 			. 17 = Total Withdrawal Amount
 			. 18 = Total Bonus Amount
+		@DataLimitBy:
+			.  0 =  data with no limit 
+			.  1 =  data limit by Turnover
+			.  2 =  data limit by GGR
+			.  3 =  data limit by BetCount
+			.  4 =  data limit by AvgBet Amount
+		@IsDataLimitDesc
+			.  0 =  Top
+			.  1 =  Bottom
+		@DataLimitValue: Top/bottom X player
 */
 
 BEGIN
@@ -142,6 +156,7 @@ BEGIN
 		,BonusAmount				MONEY
 		,BasedBonusAmount			MONEY
 		,IsExtraUser				BIT DEFAULT (0) -- for count player who has placed bet
+		,IsTicketData				BIT DEFAULT (1) -- default for ticket data
 	)
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (CustId)
 
@@ -350,8 +365,8 @@ BEGIN
 	-- Deposit/Withdrawal/Bonus
 	BEGIN 
 		-- Deposit: DepositInfo
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, NumberOfDeposit, DepositAmount, BasedDepositAmount, IsExtraUser)
-		SELECT d.rptDate, d.CustId, d.CurrencyId, d.SiteId, SUM(d.BetCount), SUM(d.Amount / e.MultipleBy), SUM(d.Amount * e.Rate / e.MultipleBy), 1
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, NumberOfDeposit, DepositAmount, BasedDepositAmount, IsExtraUser, IsTicketData)
+		SELECT d.rptDate, d.CustId, d.CurrencyId, d.SiteId, SUM(d.BetCount), SUM(d.Amount / e.MultipleBy), SUM(d.Amount * e.Rate / e.MultipleBy), 1, 0
 		FROM (
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
@@ -369,8 +384,8 @@ BEGIN
 		GROUP BY d.rptDate, d.CustId, d.CurrencyId, d.SiteId
 		
 		-- Withdrawal: WithdrawalInfo
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, NumberOfWithdrawal, WithdrawalAmount, BasedWithdrawalAmount, IsExtraUser)
-		SELECT w.rptDate, w.CustId, w.CurrencyId, w.SiteId, SUM(w.BetCount), SUM(w.Amount / e.MultipleBy), SUM(w.Amount * e.Rate / e.MultipleBy), 1
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, NumberOfWithdrawal, WithdrawalAmount, BasedWithdrawalAmount, IsExtraUser, IsTicketData)
+		SELECT w.rptDate, w.CustId, w.CurrencyId, w.SiteId, SUM(w.BetCount), SUM(w.Amount / e.MultipleBy), SUM(w.Amount * e.Rate / e.MultipleBy), 1, 0
 		FROM (
 			SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)) AS rptDate, CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime)) AS ExchangeDate
@@ -388,8 +403,8 @@ BEGIN
 		GROUP BY w.rptDate, w.CustId, w.CurrencyId, w.SiteId
 
 		-- Bonus: CustBonusSummary
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, BonusAmount, BasedBonusAmount, IsExtraUser)
-		SELECT b.rptDate, b.CustId, b.CurrencyId, b.SiteId, SUM(b.Amount), SUM(b.Amount * e.Rate), 1
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, SiteId, BonusAmount, BasedBonusAmount, IsExtraUser, IsTicketData)
+		SELECT b.rptDate, b.CustId, b.CurrencyId, b.SiteId, SUM(b.Amount), SUM(b.Amount * e.Rate), 1, 0
 		FROM (
 			SELECT b.DataSource, b.BonusType
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, b.BonusTime)) AS rptDate
@@ -467,7 +482,44 @@ BEGIN
 			INNER JOIN #__TpExchange e ON rs.CurrencyId = e.TpExchangeId AND rs.exTime BETWEEN e.FromDate AND e.ToDate
 		GROUP BY cb.CustId
 	END
+	
+	--Get data limits player base on ticket data
+	BEGIN
+		CREATE TABLE #_ListPlayer (CustId INT)
+		IF (@DataLimitBy <> 0)
+		BEGIN
+			;WITH CTE_Cust AS (
+				SELECT CustId
+					,CASE @DataLimitBy WHEN 1 THEN SUM(BasedTurnOver)
+										WHEN 2 THEN SUM(BasedRevenue)
+										WHEN 3 THEN SUM(BetCount)
+										WHEN 4 THEN ISNULL(SUM(BasedNetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
+					END AS GroupAmount
+				FROM  #__N88_SumWinloss
+				WHERE IsTicketData = 1 -- just get only ticket data
+				GROUP BY CustId
+			)
+			INSERT INTO #_ListPlayer(CustId)
+			SELECT TOP(@DataLimitValue) c.CustId	
+			FROM CTE_Cust c
+			ORDER BY
+				CASE WHEN @IsDataLimitDesc =1 THEN GroupAmount END DESC
+				,CASE WHEN @IsDataLimitDesc = 0 THEN GroupAmount END ASC
+				,c.CustId 			
+		END
 
+		IF EXISTS (
+			SELECT 1
+			FROM #_ListPlayer
+		)
+		BEGIN
+			DELETE n
+			FROM #__N88_SumWinloss n
+				LEFT JOIN #_ListPlayer l ON n.CustId = l.CustId
+			WHERE n.IsTicketData = 1
+				AND l.CustId IS NULL
+		END 
+	END
 	DROP TABLE #__TpExchange
 
 	-- 2. Calc temp result

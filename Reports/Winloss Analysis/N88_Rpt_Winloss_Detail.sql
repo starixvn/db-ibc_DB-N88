@@ -18,6 +18,9 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Winloss_Detail]
 	,@IsIncludedTestData		BIT
 	,@IsDetailInOriginalCurr	BIT = 0
 	,@TimeZone					SMALLINT = 8
+	,@DataLimitBy				INT= 0
+	,@IsDataLimitDesc			INT = 0
+	,@DataLimitValue			INT = 0
 AS
 
 /*
@@ -34,7 +37,19 @@ AS
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
-
+		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
+		
+	Param's Explanation:
+		@DataLimitBy:
+			.  0 =  data with no limit 
+			.  1 =  data limit by Turnover
+			.  2 =  data limit by GGR
+			.  3 =  data limit by BetCount
+			.  4 =  data limit by AvgBet Amount
+		@IsDataLimitDesc
+			.  0 =  Top
+			.  1 =  Bottom
+		@DataLimitValue: Top/bottom X player
 */
 
 BEGIN
@@ -257,6 +272,42 @@ BEGIN
 		) r
 			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
 		GROUP BY rptDate, GameType, CustId, Currency
+	END
+
+	--Get data limits by player
+	BEGIN
+		CREATE TABLE #_ListPlayer (CustId INT)
+		IF (@DataLimitBy <> 0)
+		BEGIN
+			;WITH CTE_Cust AS (
+				SELECT CustId
+					,CASE @DataLimitBy WHEN 1 THEN SUM(TurnOver)
+										WHEN 2 THEN SUM(Revenue)
+										WHEN 3 THEN SUM(BetCount)
+										WHEN 4 THEN ISNULL(SUM(BasedNetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
+					END AS GroupAmount
+				FROM  #__N88_SumWinloss
+				GROUP BY CustId
+			)
+			INSERT INTO #_ListPlayer(CustId)
+			SELECT TOP(@DataLimitValue) c.CustId	
+			FROM CTE_Cust c
+			ORDER BY
+				CASE WHEN @IsDataLimitDesc =1 THEN GroupAmount END DESC
+				,CASE WHEN @IsDataLimitDesc = 0 THEN GroupAmount END ASC
+				,c.CustId 			
+		END
+
+		IF EXISTS (
+			SELECT 1
+			FROM #_ListPlayer
+		)
+		BEGIN
+			DELETE n
+			FROM #__N88_SumWinloss n
+				LEFT JOIN #_ListPlayer l ON n.CustId = l.CustId
+			WHERE l.CustId IS NULL
+		END 
 	END
 
 	-- Reset Exchange
