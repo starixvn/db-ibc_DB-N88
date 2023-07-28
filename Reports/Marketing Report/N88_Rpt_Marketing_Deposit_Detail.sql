@@ -28,6 +28,7 @@ AS
 		- 20211008@Sol: MPA - Marketing & WL Analysis - Add more Info - [RedmineID: #159910]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param's Explanation:
 		@SortbyId:
@@ -99,6 +100,7 @@ BEGIN
 		FROM #DepositInfo d
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
 		WHERE c.SiteId = @SiteId AND c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 		
 		DECLARE @RowStart INT, @RowEnd INT
 		SELECT  @RowStart = @PageSize * (@PageIndex - 1) + 1, @RowEnd = @RowStart + @PageSize - 1
@@ -182,6 +184,7 @@ BEGIN
 					LEFT JOIN dbo.CustRegInfo cg WITH (NOLOCK) ON c.CustId = cg.CustId
 				WHERE c.SiteId = @SiteId
 					AND c.IsTest = 0
+					AND c.MemberType <> 3 -- Exclude Live Streamer
 					AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			) r
 		) t

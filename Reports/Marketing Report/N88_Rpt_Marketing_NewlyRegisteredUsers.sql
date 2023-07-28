@@ -35,6 +35,8 @@ AS
 		- 20220412@Percy: Integrate new bonus: Referral & Rebuild Bonus Structure [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+
 */
 
 BEGIN
@@ -72,6 +74,7 @@ BEGIN
 		WHERE RegTime >= @FromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND SiteId = @SiteId
 			AND IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		SELECT @CompareNewlyRegisterUsers = COUNT(1)
@@ -79,6 +82,7 @@ BEGIN
 		WHERE RegTime >= @CompareFromDateTimeGMT AND RegTime < DATEADD(DAY, 1, @CompareToDateTimeGMT)
 			AND SiteId = @SiteId
 			AND IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		-- Summary
@@ -136,6 +140,7 @@ BEGIN
 		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 		GROUP BY b.BonusCode, b.BonusName
 		ORDER BY CASE WHEN b.BonusCode IS NULL THEN 1 ELSE 0 END, b.BonusCode
@@ -205,6 +210,7 @@ BEGIN
 			WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND c.SiteId = @SiteId
 				AND c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			GROUP BY
 				CASE

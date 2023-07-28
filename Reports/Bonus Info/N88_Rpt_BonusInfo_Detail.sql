@@ -37,6 +37,7 @@ AS
 		- 20230327@Malcolm: Add Group by Month [RedmineId: #185268]
 		- 20230504@Evan: Fix show wrong currency BDT & USD [RedmineId: #187776]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param's Explanation:
 		@SortbyId:
@@ -294,6 +295,7 @@ BEGIN
 		FROM #BonusInfo b
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId
 		WHERE c.IsTest = 1
+			OR c.MemberType = 3 -- Live Streamer
 
 		DELETE #DepositInfo WHERE CustId NOT IN (SELECT CustId FROM #BonusInfo)
 		DELETE #WithdrawalInfo WHERE CustId NOT IN (SELECT CustId FROM #BonusInfo)

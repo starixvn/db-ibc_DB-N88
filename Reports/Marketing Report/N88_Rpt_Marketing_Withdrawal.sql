@@ -19,6 +19,8 @@ AS
 		- 20200818@Percy: Initialize SP [RedmineID: #141575]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+
 */
 
 BEGIN
@@ -75,6 +77,7 @@ BEGIN
 				AND w.SiteId = @SiteId
 				AND w.Status = 6
 				AND c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 		END
 
@@ -100,6 +103,7 @@ BEGIN
 				AND w.SiteId = @SiteId
 				AND w.Status = 6
 				AND c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 		END
 	END

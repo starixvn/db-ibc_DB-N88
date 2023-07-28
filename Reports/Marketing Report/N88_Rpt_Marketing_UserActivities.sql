@@ -21,6 +21,7 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - change from N88_RptWinloss to N88_SumWinloss - [RedmineID: #155334]
 		- 20211118@Percy: Change code to get Active Players [RedmineID: #161048]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 
 	Param's Explanation:
 		. ViewBy:
@@ -67,6 +68,7 @@ BEGIN
 		) AS a
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON a.CustId = c.CustId
 		WHERE c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 
 		INSERT INTO #UserActivities (WinlostDate, CustId, IsActive, IsNewlyRegister)
 		SELECT CONVERT(DATE, DATEADD(HOUR, @TimeZone, RegTime)), CustId, 0, 1
@@ -74,6 +76,7 @@ BEGIN
 		WHERE c.RegTime >= @FromDateTimeGMT AND c.RegTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND c.IsTest = 0
 			AND c.SiteId = @SiteId
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND NOT EXISTS (SELECT 1 FROM #UserActivities u WHERE c.CustId = u.CustId)
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 	END

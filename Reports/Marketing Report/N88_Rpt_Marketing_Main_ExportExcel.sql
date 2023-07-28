@@ -38,6 +38,8 @@ AS
 		- 20220518@Percy: Remove CR & RR information if Date Range is one date [RedmineID: #172917]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+
 */
 
 BEGIN
@@ -158,6 +160,7 @@ BEGIN
 				GROUP BY CustId
 			) a ON c.CustId = a.CustId
 		WHERE c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 
 		-- Exchange
 		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId TINYINT, Rate FLOAT, MultipleBy FLOAT)
@@ -312,6 +315,7 @@ BEGIN
 			) w ON w.CustId = c.CustId
 		WHERE c.SiteId = @SiteId
 			AND c.IsTest = 0
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
 		INSERT INTO @tempData (Name, NameVN, DateRange, MonthToDate, DataType)
@@ -422,6 +426,7 @@ BEGIN
 				LEFT JOIN dbo.N88_f_SignupURL() s ON cg.SignupUrl = s.SignupUrl AND s.SiteId = @SiteId
 			WHERE c.SiteId = @SiteId
 				AND c.IsTest = 0
+				AND c.MemberType <> 3 -- Exclude Live Streamer
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 			GROUP BY
 				CONVERT(NVARCHAR(200),

@@ -19,6 +19,8 @@ AS
 		- 20200818@Percy: Support special date range [RedmineID: #137395]
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+
 */
 
 BEGIN
@@ -52,6 +54,7 @@ BEGIN
 		FROM dbo.Customer c WITH (NOLOCK)
 		WHERE c.IsTest = 0
 			AND c.SiteId = @SiteId
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND c.RegTime <= DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
 
@@ -64,6 +67,7 @@ BEGIN
 					AND d.Status = 3
 		WHERE c.IsTest = 0
 			AND c.SiteId = @SiteId
+			AND c.MemberType <> 3 -- Exclude Live Streamer
 			AND d.WinlostDate <= DATEADD(DAY, 1, @ToDate)
 			AND d.CreateTime <= DATEADD(DAY, 1, @ToDateTimeGMT)
 			AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), c.CurrencyId) + ',%'
@@ -104,6 +108,7 @@ BEGIN
 				) t
 					INNER JOIN dbo.Customer c WITH (NOLOCK) ON t.CustId = c.CustId
 				WHERE c.IsTest = 0
+					AND c.MemberType <> 3 -- Exclude Live Streamer
 				GROUP BY ProductId
 			) r ON p.ProductId = r.ProductId
 		ORDER BY p.ProductId

@@ -20,6 +20,8 @@ AS
 	Revisions:
 		- 20220412@Percy: Initialize SP [RedmineID: #171245]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
+		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+
 */
 
 BEGIN
@@ -81,7 +83,7 @@ BEGIN
 			,CONVERT(DATE, DATEADD(HOUR, -4, b.BonusTime))
 			,CONVERT(INT, CASE WHEN b.DataSource = 'DrawLog' THEN b.BonusCode END)
 	) b
-		INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0
+		INNER JOIN dbo.Customer c WITH (NOLOCK) ON b.CustId = c.CustId AND c.IsTest = 0 AND c.MemberType <> 3 -- exclude data of customer live steamer
 		INNER JOIN #__TpExchange e ON b.CurrencyId = e.TpExchangeId AND b.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 		LEFT JOIN dbo.N88_f_BonusType() bt ON b.DataSource = bt.DataSource AND ISNULL(b.BonusType, 0) = bt.DBTypeId
 		LEFT JOIN dbo.Promotion p WITH (NOLOCK) ON b.BonusCode = p.BonusCode AND p.SiteId = @SiteId AND b.DataSource IN ('BonusInfo', 'RebateMLog')
