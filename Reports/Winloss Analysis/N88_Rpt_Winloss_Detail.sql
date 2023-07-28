@@ -284,7 +284,7 @@ BEGIN
 					,CASE @DataLimitBy WHEN 1 THEN SUM(TurnOver)
 										WHEN 2 THEN SUM(Revenue)
 										WHEN 3 THEN SUM(BetCount)
-										WHEN 4 THEN ISNULL(SUM(BasedNetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
+										WHEN 4 THEN ISNULL(SUM(NetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
 					END AS GroupAmount
 				FROM  #__N88_SumWinloss
 				GROUP BY CustId

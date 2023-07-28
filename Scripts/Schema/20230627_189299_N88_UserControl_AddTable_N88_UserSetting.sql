@@ -1,7 +1,7 @@
 /*<info serverAlias="DBN88POL-N88_UserControl" isFunction="0" isNested="0"></info>*/
 /*
 	Created: 20230620@Sally
-	DB: DBN88-bodb_N88
+	DB: DBN88POL-N88_UserControl
 	Task: 189299 - MPA - Report on top/bottom X player
 	Step 1:
 		Design Schema & Table for new permissive function:
