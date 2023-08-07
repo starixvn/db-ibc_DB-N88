@@ -15,6 +15,7 @@ AS
 		- 20200314@Kos: Created [RedmineID: #129873]
 		- 20201118@Kos: Support default base currency [RedmineID: #145346]
 		- 20210715@Hogan: Apply Date Range permission [RedmineID: #158257]
+		- 20230615@Hogan: Remove Date Range permission [RedmineID: #189299]
 */
 
 BEGIN
@@ -26,7 +27,6 @@ BEGIN
 		,u.email
 		,u.DefaultBaseCurrencyId
 		,e.Code AS DefaultBaseCurrencyCode
-		,u.DataRangeLimitation
 		,u.username
 		,u.userpwd
 		,u.IsLicenseeUser
