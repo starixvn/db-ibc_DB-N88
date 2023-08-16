@@ -20,6 +20,7 @@ AS
 		- 20210525@Sol: MPA - Add more information to Marketing & WL Analysis - add currency filter - [RedmineID: #155334]
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+		- 20230816@Sally: Fix bug split product [RedmineId: #192802]
 
 */
 
@@ -74,7 +75,7 @@ BEGIN
 
 		CREATE TABLE #Products (ProductId INT)
 		INSERT INTO #Products (ProductId)
-		SELECT DISTINCT val FROM bodb02.dbo.f_StringSplit(@ProductIds, ',')
+		SELECT DISTINCT CONVERT(INT, value) FROM STRING_SPLIT(@ProductIds, ',')
 
 		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT)
 		INSERT INTO #TpExchange (FromDate, ToDate, TpExchangeId, Rate)
