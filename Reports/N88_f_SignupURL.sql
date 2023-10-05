@@ -14,6 +14,7 @@ AS
 	Revisions:
 		- 20220214@Percy: Initialize function [RedmineID: #164724]
 		- 20230303@Malcolm: Add Signup URL for N8B [RedmineID: #183738]
+		- 20231005@Sally: Add more links into N8B signup URL logic [RedmineID: #195057]
 */
 
 RETURN
@@ -60,6 +61,8 @@ RETURN
 						,('m.bwing06.com'), ('m.bwing07.com'), ('m.bwing08.com'), ('m.bwing09.com'), ('m.bwing10.com')
 						,('m.bwing11.com'), ('m.bwing12.com'), ('m.bwing13.com'), ('m.bwing14.com'), ('m.bwing15.com')
 						,('m.bwing16.com'), ('m.bwing17.com'), ('m.bwing18.com'), ('m.bwing19.com'), ('m.bwing20.com')
+						,('m.bwing88.com'),('m.bwinghotevent.co'),('m.bwinghotevent.online'),('m.bwingmkt7.com'),('www.bwing88.com')
+						,('www.bwinghotevent.co'),('www.bwinghotevent.online'),('www.bwingmkt2.com'),('www.bwingmkt7.com')
 					) m (SignupURL)
 	UNION ALL SELECT 3, 4, 'APP', 'app.bwing.com'
 	UNION ALL SELECT 3, 5, 'Landing Pages', NULL
