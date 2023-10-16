@@ -1,7 +1,6 @@
 /*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
 USE bodb_N88
 GO
-
 ALTER PROCEDURE [dbo].[N88_Rpt_Winloss]
 	@LicenseeIds				VARCHAR(MAX)
 	,@FilterBy					TINYINT
@@ -60,7 +59,6 @@ AS
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
-		- 20231011@Sally: Merging USD (72) currency into  USD (3) currency to a row
 
 	Param's Explanation:
 		@GroupBy:
@@ -1135,48 +1133,43 @@ BEGIN
 		,CustId
 		,SabaId
 		,SabaSystemId
-		,ISNULL(t.ExchangeId, r.CurrencyId) AS CurrencyId
-		,ISNULL(SUM(Turnover), 0)
-		,ISNULL(SUM(NetTurnover), 0)
-		,ISNULL(SUM(NetTurnoverForMargin), 0)
-		,ISNULL(SUM(TurnoverNoDraw), 0)
-		,ISNULL(SUM(BasedTurnover), 0)
-		,ISNULL(SUM(BasedNetTurnover), 0)
-		,ISNULL(SUM(BasedNetTurnoverForMargin), 0)
-		,ISNULL(SUM(BasedTurnoverNoDraw), 0)
-		,ISNULL(SUM(GGR), 0)
-		,ISNULL(SUM(BasedGGR), 0)
-		,ISNULL(SUM(GGRForMargin), 0)
-		,ISNULL(SUM(BasedGGRForMargin), 0)
-		,ISNULL(SUM(PlayerWinloss), 0)
-		,ISNULL(SUM(BasedPlayerWinloss), 0)
-		,ISNULL(SUM(ProgressiveWin), 0)
-		,ISNULL(SUM(ProgressiveBet), 0)
-		,ISNULL(SUM(BasedProgressiveWin), 0)
-		,ISNULL(SUM(BasedProgressiveBet), 0)
-		,ISNULL(SUM(Commission), 0)
-		,ISNULL(SUM(BasedCommission), 0)
-		,ISNULL(SUM(BetCount), 0)
-		,SUM(AvgBetAmount)
-		,SUM(BasedAvgBetAmount)
-		,SUM(UniquePlayers)
-		,ISNULL(SUM(NumberOfDeposit), 0)	
-		,ISNULL(SUM(DepositAmount), 0)
-		,ISNULL(SUM(BasedDepositAmount), 0)
-		,ISNULL(SUM(NumberOfWithdrawal), 0)
-		,ISNULL(SUM(WithdrawalAmount), 0)	
-		,ISNULL(SUM(BasedWithdrawalAmount), 0)
-		,ISNULL(SUM(BonusAmount), 0)
-		,ISNULL(SUM(BasedBonusAmount), 0)
-		,ISNULL(SUM(ClosingBalance), 0)
-		,ISNULL(SUM(BasedClosingBalance), 0)
+		,r.CurrencyId
+		,ISNULL(Turnover, 0)
+		,ISNULL(NetTurnover, 0)
+		,ISNULL(NetTurnoverForMargin, 0)
+		,ISNULL(TurnoverNoDraw, 0)
+		,ISNULL(BasedTurnover, 0)
+		,ISNULL(BasedNetTurnover, 0)
+		,ISNULL(BasedNetTurnoverForMargin, 0)
+		,ISNULL(BasedTurnoverNoDraw, 0)
+		,ISNULL(GGR, 0)
+		,ISNULL(BasedGGR, 0)
+		,ISNULL(GGRForMargin, 0)
+		,ISNULL(BasedGGRForMargin, 0)
+		,ISNULL(PlayerWinloss, 0)
+		,ISNULL(BasedPlayerWinloss, 0)
+		,ISNULL(ProgressiveWin, 0)
+		,ISNULL(ProgressiveBet, 0)
+		,ISNULL(BasedProgressiveWin, 0)
+		,ISNULL(BasedProgressiveBet, 0)
+		,ISNULL(Commission, 0)
+		,ISNULL(BasedCommission, 0)
+		,ISNULL(BetCount, 0)
+		,AvgBetAmount
+		,BasedAvgBetAmount
+		,UniquePlayers
+		,ISNULL(NumberOfDeposit, 0)	
+		,ISNULL(DepositAmount, 0)
+		,ISNULL(BasedDepositAmount, 0)
+		,ISNULL(NumberOfWithdrawal, 0)
+		,ISNULL(WithdrawalAmount, 0)	
+		,ISNULL(BasedWithdrawalAmount, 0)
+		,ISNULL(BonusAmount, 0)
+		,ISNULL(BasedBonusAmount, 0)
+		,ISNULL(ClosingBalance, 0)
+		,ISNULL(BasedClosingBalance, 0)
 	FROM #__tmpResult r
-		LEFT JOIN dbo.TpExchange t WITH(NOLOCK) ON t.TpExchangeId = r.CurrencyId
-	GROUP BY [Group]
-		,CustId
-		,SabaId
-		,SabaSystemId
-		,ISNULL(t.ExchangeId, r.CurrencyId)
+
 
 	DROP TABLE #__tmpResult
 
