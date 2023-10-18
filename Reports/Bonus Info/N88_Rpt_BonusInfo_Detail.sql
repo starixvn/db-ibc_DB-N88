@@ -38,6 +38,7 @@ AS
 		- 20230504@Evan: Fix show wrong currency BDT & USD [RedmineId: #187776]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+		- 20231018@Sally: Missing data of currency USD (3) on details [RedmineId: #195591]
 		- 20231020@Sally: Permission to hide sensitive information [RedmineId: #195057]
 
 	Param's Explanation:
@@ -77,7 +78,6 @@ BEGIN
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #WithdrawalInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
 	CREATE TABLE #BonusInfoDetail (BonusCode VARCHAR(50), BonusTypeId SMALLINT, BonusTypeName VARCHAR(50), DataSource VARCHAR(100))
-	CREATE TABLE #Currency (CurrencyId INT, TPCurrencyId INT, CurrencyName NVARCHAR(50))
 
 	BEGIN
 		SELECT @TPCurrencyIds = 
@@ -86,17 +86,6 @@ BEGIN
 			FROM STRING_SPLIT(@CurrencyIds, ',') t 
 				LEFT JOIN dbo.TPExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
 		)
-
-		INSERT INTO #Currency (CurrencyId, CurrencyName)
-		EXEC bodb02.dbo.Lrf_CurrencySel	 
-
-		DELETE c FROM #Currency c WHERE c.CurrencyId NOT IN (SELECT value FROM STRING_SPLIT(@CurrencyIds,','))
-
-		--Convert To TpCurrency
-		UPDATE c
-			SET c.TPCurrencyId = ISNULL(t.TpExchangeId, c.CurrencyId)
-		FROM #Currency c
-			LEFT JOIN dbo.TPExchange t WITH(NOLOCK) ON t.ExchangeId = c.CurrencyId
 
 		--Get BonusInfo	
 		INSERT INTO #BonusInfoDetail (BonusCode, BonusTypeId)
@@ -355,7 +344,13 @@ BEGIN
 							,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 1 THEN PercentagedCompletion END ASC
 							,CASE WHEN @SortbyId = 13 AND @IsSortAsc = 0 THEN PercentagedCompletion END DESC) AS RowId
 		FROM (
-			SELECT c.UserName, cy.CurrencyName, c.TpUserName, b.BonusCode, b.BonusName, b.BonusTypeName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
+			SELECT c.UserName
+				,CASE
+					WHEN e.ExchangeId = 51 THEN 'INH'
+					WHEN e.ExchangeId = 20 THEN 'UUS'
+					ELSE e.Code 
+				 END AS CurrencyName
+				, c.TpUserName, b.BonusCode, b.BonusName, b.BonusTypeName, b.ClaimedDate, b.Amount AS ClaimedAmount, ISNULL(d.Amount, 0) AS TotalDeposit, ISNULL(w.Amount, 0) AS TotalWithdrawal, b.Status, ISNULL(b.PercentagedCompletion, 0) AS PercentagedCompletion
 				,CONVERT(VARCHAR(100),
 					CASE
 						WHEN b.DataSource = 'AdjustmentInfo' AND b.TransactionType = 1 THEN 'Credit'
@@ -372,7 +367,8 @@ BEGIN
 					) AS TransactionType
 			FROM dbo.Customer c WITH (NOLOCK)
 				INNER JOIN #BonusInfo b ON b.CustId = c.CustId
-				INNER JOIN #Currency cy ON cy.TPCurrencyId = c.CurrencyId
+				LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.TpExchangeId = c.CurrencyId
+				INNER JOIN bodb02.dbo.Exchange e WITH (NOLOCK) ON ISNULL(tp.ExchangeId, c.CurrencyId) = e.ExchangeId
 				LEFT JOIN (
 					SELECT d.CustId, SUM(d.Amount) AS Amount
 					FROM #DepositInfo d
@@ -393,6 +389,5 @@ BEGIN
 	DROP TABLE #TPExchange
 	DROP TABLE #WithdrawalInfo
 	DROP TABLE #BonusInfoDetail
-	DROP TABLE #Currency
 END
 GO
