@@ -38,6 +38,7 @@ AS
 		- 20230504@Evan: Fix show wrong currency BDT & USD [RedmineId: #187776]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
+		- 20231020@Sally: Permission to hide sensitive information [RedmineId: #195057]
 
 	Param's Explanation:
 		@SortbyId:
@@ -145,6 +146,7 @@ BEGIN
 				AND b.SiteId = @SiteId
 				AND ',' + @ClaimedStatusIds + ',' LIKE '%,' + CONVERT(VARCHAR(3), b.Status) + ',%'
 				AND ',' + @TPCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
+				AND bi.BonusTypeId = CASE WHEN bi.BonusTypeId <> 0 THEN p.PromotionType ELSE bi.BonusTypeId END
 		END
 
 		-- RebateMLog
@@ -177,7 +179,7 @@ BEGIN
 		END
 
 		-- AdjustmentInfo
-		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 101)
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 101 AND BonusCode = BonusTypeName)
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
 			SELECT a.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName , a.CurrencyId, DATEADD(HOUR, -4, a.CreateTime), DATEADD(HOUR, @TimeZone, a.CreateTime), 'AdjustmentInfo', AdjustType
@@ -186,7 +188,7 @@ BEGIN
 							WHEN a.AdjustType IN (2, 4) THEN -1 -- Debit, Decrease bonus
 							ELSE 0 END
 			FROM dbo.AdjustmentInfo a WITH (NOLOCK)
-			INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 101
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 101
 			WHERE a.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND a.CreateTime >= @FromDateTimeGMT AND a.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND a.SiteId = @SiteId
@@ -196,7 +198,7 @@ BEGIN
 		END
 
 		-- LogAdminAdjustWallet
-		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 101) 
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 101 AND BonusCode = BonusTypeName) 
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
 			SELECT l.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, l.CurrencyId, DATEADD(HOUR, -4, l.CreateTime), DATEADD(HOUR, @TimeZone, l.CreateTime), 'LogAdminAdjustWallet', l.Direction
@@ -215,12 +217,12 @@ BEGIN
 		END
 
 		-- VIPUpgradeReview
-		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE DataSource = 'VIPUpgradeReview')
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE DataSource = 'VIPUpgradeReview' AND BonusCode = BonusTypeName )
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount)
 			SELECT v.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, v.CurrencyId, DATEADD(HOUR, -4, v.SettleTime), DATEADD(HOUR, @TimeZone, v.SettleTime), v.UpgradeAmount
 			FROM dbo.VipUpgradeReview v WITH (NOLOCK)
-			INNER JOIN #BonusInfoDetail bi ON bi.DataSource = 'VIPUpgradeReview'
+				INNER JOIN #BonusInfoDetail bi ON bi.DataSource = 'VIPUpgradeReview'
 			WHERE v.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND v.SettleTime >= @FromDateTimeGMT AND v.SettleTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND v.SiteId = @SiteId
@@ -229,12 +231,12 @@ BEGIN
 		END
 
 		-- CustVerificationRewardDetail
-		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE DataSource = 'CustVerificationReward')
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE DataSource = 'CustVerificationReward' AND BonusCode = BonusTypeName )
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, DataSource, TransactionType, Amount)
 			SELECT c.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, c.CurrencyId, DATEADD(HOUR, -4, c.RewardTime), DATEADD(HOUR, @TimeZone, c.RewardTime), 'CustVerificationReward', c.RewardType, c.RewardAmount
 			FROM dbo.CustVerificationRewardDetail c WITH (NOLOCK)
-			INNER JOIN #BonusInfoDetail bi ON bi.DataSource = 'CustVerificationReward'
+				INNER JOIN #BonusInfoDetail bi ON bi.DataSource = 'CustVerificationReward'
 			WHERE c.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND c.RewardTime >= @FromDateTimeGMT AND c.RewardTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND c.SiteId = @SiteId
@@ -242,12 +244,12 @@ BEGIN
 		END
 
 		-- Referral (ReferralMLog)
-		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 105) 
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 105 AND BonusCode = BonusTypeName ) 
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
 			SELECT r.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, r.CurrencyId, DATEADD(HOUR, -4, r.CreateTime), DATEADD(HOUR, @TimeZone, r.CreateTime), r.ReferralAmount, 'ReferralMLog',-2
 			FROM dbo.ReferralMLog r WITH (NOLOCK)
-			INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 105
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 105
 			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND r.SiteId = @SiteId
@@ -255,12 +257,12 @@ BEGIN
 		END
 
 		-- Referral (ReferralLog)
-		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 105)
+		IF EXISTS (SELECT 1 FROM #BonusInfoDetail WHERE BonusTypeId = 105  AND BonusCode = BonusTypeName )
 		BEGIN
 			INSERT INTO #BonusInfo (CustId, BonusCode, BonusName, BonusTypeId, BonusTypeName, CurrencyId, ExchangeDate, ClaimedDate, Amount, DataSource, TransactionType)
 			SELECT r.CustId, bi.BonusCode, '' AS BonusName, bi.BonusTypeId, bi.BonusTypeName, r.CurrencyId, DATEADD(HOUR, -4, r.CreateTime), DATEADD(HOUR, @TimeZone, r.CreateTime), r.ReferralFreeCredit, 'ReferralLog',-1
 			FROM dbo.ReferralLog r WITH (NOLOCK)
-			INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 105
+				INNER JOIN #BonusInfoDetail bi ON bi.BonusTypeId = 105
 			WHERE r.WinlostDate BETWEEN @tmpFromDate AND @tmpToDate
 				AND r.CreateTime >= @FromDateTimeGMT AND r.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT)
 				AND r.SiteId = @SiteId
