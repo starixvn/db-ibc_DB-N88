@@ -38,6 +38,7 @@ AS
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
+		- 20231023@Sally: Separate USD (3) and USDKH (72)
 		
 	Param's Explanation:
 		@DataLimitBy:
@@ -75,7 +76,7 @@ BEGIN
 		rptDate						DATE
 		,GameType					INT
 		,CustId						INT
-		,CurrencyId					INT
+		,TpCurrencyId				INT
 		,BetCount					INT
 		,TurnOver					MONEY
 		,NetTurnOver				MONEY
@@ -119,10 +120,10 @@ BEGIN
 
 		INSERT INTO #__N88_SumWinloss
 		(
-			rptDate, GameType, CustId, CurrencyId
+			rptDate, GameType, CustId, TpCurrencyId
 			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
 		)
-		SELECT rptDate, GameType, CustId, Currency
+		SELECT rptDate, GameType, CustId, r.TpCurrencyId
 			,SUM(BetCount)
 			,SUM(TurnOver * e.Rate)
 			,SUM(NetTurnOver * e.Rate)
@@ -137,7 +138,7 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
 				,rptDate				= CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,r.CustId
-				,r.Currency
+				,r.Currency AS TpCurrencyId
 				,r.GameType
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
@@ -171,8 +172,8 @@ BEGIN
 				,r.Currency
 				,r.GameType
 		) r
-			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
-		GROUP BY rptDate, GameType, CustId, Currency
+			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.TpCurrencyId = e.TpExchangeId
+		GROUP BY rptDate, GameType, CustId, r.TpCurrencyId
 
 		-- Get commission for 9W (filter by winlostdate only)
 		IF EXISTS (SELECT 1 FROM #__N88_SumWinloss WHERE GameType = 51)
@@ -218,10 +219,10 @@ BEGIN
 
 		INSERT INTO #__N88_SumWinloss
 		(
-			rptDate, GameType, CustId, CurrencyId
+			rptDate, GameType, CustId, TpCurrencyId
 			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
 		)
-		SELECT rptDate, GameType, CustId, Currency
+		SELECT rptDate, GameType, CustId, r.TpCurrencyId
 			,SUM(BetCount)
 			,SUM(TurnOver * e.Rate)
 			,SUM(NetTurnOver * e.Rate)
@@ -236,7 +237,7 @@ BEGIN
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
 				,rptDate				= CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,r.CustId
-				,r.Currency
+				,r.Currency AS TpCurrencyId
 				,r.GameType
 				,TurnOver				= SUM(TurnOver)
 				,NetTurnOver			= SUM(ValidBet)
@@ -270,8 +271,8 @@ BEGIN
 				,r.Currency
 				,r.GameType
 		) r
-			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.Currency = e.TpExchangeId
-		GROUP BY rptDate, GameType, CustId, Currency
+			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.TpCurrencyId = e.TpExchangeId
+		GROUP BY rptDate, GameType, CustId, r.TpCurrencyId
 	END
 
 	--Get data limits by player
@@ -321,7 +322,7 @@ BEGIN
 	-- Deposit/Withdrawal
 	BEGIN 
 		-- Deposit
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfDeposit, DepositAmount, IsDepositWithrawUser)
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfDeposit, DepositAmount, IsDepositWithrawUser)
 		SELECT d.rptDate, d.CustId, d.CurrencyId, 
 			SUM(d.BetCount) AS NumberOfDeposit, 
 			SUM(d.Amount * e.Rate / e.MultipleBy) AS DepositAmount,
@@ -357,7 +358,7 @@ BEGIN
 		GROUP BY d.rptDate, d.CustId, d.CurrencyId
 		
 		-- Withdrawal
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, CurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
 		SELECT w.rptDate, w.CustId, w.CurrencyId, 
 			SUM(w.BetCount) AS NumberOfWithdrawal, 
 			SUM(w.Amount * e.Rate / e.MultipleBy) AS WithdrawalAmount,
@@ -429,6 +430,7 @@ BEGIN
 		,c.TpUserName
 		,c.TpSystemUserName
 		,ISNULL(tp.ExchangeId, c.CurrencyId) AS CurrencyId
+		,c.CurrencyId AS TpCurrencyId
 		,s.SiteName
 		,r.TurnOver
 		,r.NetTurnOver
