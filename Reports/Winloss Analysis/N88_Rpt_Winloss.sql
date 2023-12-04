@@ -62,6 +62,7 @@ AS
 		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
 		- 20231011@Sally: Merging USD (72) currency into  USD (3) currency to a row
 		- 20231023@Sally: Separate USD (3) and USDKH (72)
+		- 20231201@Sally: Get only data players based on ticket data if having limits data [RedmineId: #197493]
 
 	Param's Explanation:
 		@GroupBy:
@@ -169,6 +170,8 @@ BEGIN
 	CREATE TABLE #__ClosingBalance (CustId INT, ClosingBalance MONEY, BasedClosingBalance MONEY)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
+		,@ListCustFilter VARCHAR(MAX) = NULL
+		,@IsFilterCustId BIT = CASE WHEN ISNULL(@UserName, '') <> '' THEN 1 ELSE 0 END
 
 	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
 	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
@@ -179,6 +182,20 @@ BEGIN
 			FROM STRING_SPLIT(@CurrencyIds, ',') t 
 				LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
 	)
+
+	-- Get CustFilter Info
+	IF (@IsFilterCustId = 1)
+	BEGIN
+		SELECT @ListCustFilter = STRING_AGG(CONVERT(VARCHAR(50), c.CustId), ',')  
+		FROM dbo.Customer c WITH (NOLOCK)
+		WHERE c.MemberType <> 3 -- Exlude data of Live Streamer
+			AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+			AND (@UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
+									WHEN @UserNameFilterId = 2 THEN c.TpUserName
+									WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
+							END
+			)			
+	END
 
 	---- by winlostdate
 	IF (@FilterBy = 1)
@@ -235,6 +252,7 @@ BEGIN
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), r.CustId) + ',%' OR @IsFilterCustId = 0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
@@ -264,6 +282,7 @@ BEGIN
 				SELECT CustId, CurrencyId, DATEADD(HOUR, -12, settledDate) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
 				FROM dbo.TpReport9W WITH (NOLOCK)
 				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
+					AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), CustId) + ',%'  OR @IsFilterCustId = 0)
 				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
 			) t
 				INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.TpExchangeId
@@ -340,6 +359,7 @@ BEGIN
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
 			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), r.CustId) + ',%'  OR @IsFilterCustId = 0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
@@ -379,6 +399,7 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 3 -- Approved
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), CustId) + ',%'  OR @IsFilterCustId = 0)
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) d
@@ -398,6 +419,7 @@ BEGIN
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), SiteId) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), CurrencyId) + ',%'
 				AND Status = 6 -- Approved
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), CustId) + ',%'  OR @IsFilterCustId = 0)
 			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, CreateTime)), CustId, CurrencyId, SiteId
 				,CONVERT(DATE, DATEADD(HOUR, -4, CreateTime))
 		) w
@@ -422,6 +444,7 @@ BEGIN
 			WHERE b.BonusTime >= @FromDateTimeGMT0 AND b.BonusTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.SiteId) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), b.CurrencyId) + ',%'
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), CustId) + ',%'  OR @IsFilterCustId = 0)
 				AND 1 = CASE
 						WHEN b.DataSource = 'AdjustmentInfo' AND b.BonusStatus <> 2 THEN 0 -- 2 = Approved
 						WHEN b.DataSource = 'LogAdminAdjustWallet' AND b.BonusStatus <> 0 THEN 0 -- 0 = Success
@@ -439,30 +462,49 @@ BEGIN
 		WHERE b.DataSource IN ('BonusInfo', 'RebateMLog', 'DrawLog') OR bt.DataSource IS NOT NULL
 		GROUP BY b.rptDate, b.CustId, b.CurrencyId, b.SiteId
 	END
-	----end
 
-	IF @IsIncludedTestData = 0 OR ISNULL(@UserName, '') <> ''
-		DELETE s
-		FROM #__N88_SumWinloss s
-		WHERE NOT EXISTS (
-			SELECT 1 FROM dbo.Customer c WITH (NOLOCK)
-			WHERE c.CustId = s.CustId
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND (
-					ISNULL(@UserName, '') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
-		)
-
-	--- Exlude data of Live Streamer
-	BEGIN	
+	--- Exlude data of Live Streamer and filter IsIncludeTestData
+	BEGIN
 		DELETE s
 		FROM #__N88_SumWinloss s
 			INNER JOIN dbo.Customer c WITH (NOLOCK) ON s.CustId = c.CustId 
-		WHERE c.MemberType = 3
+		WHERE c.MemberType = 3 --- Exlude data of Live Streamer
+			OR (c.IsTest = 1 AND @IsIncludedTestData = 0)
+	END
+	
+	--Get data limits player base on ticket data
+	CREATE TABLE #_ListPlayer (CustId INT)
+	IF (@DataLimitBy <> 0)
+	BEGIN
+		;WITH CTE_Cust AS (
+			SELECT CustId
+				,CASE @DataLimitBy WHEN 1 THEN SUM(BasedTurnOver)
+									WHEN 2 THEN SUM(BasedRevenue)
+									WHEN 3 THEN SUM(BetCount)
+									WHEN 4 THEN ISNULL(SUM(BasedNetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
+				END AS GroupAmount
+			FROM  #__N88_SumWinloss
+			WHERE IsTicketData = 1 -- just get only ticket data
+			GROUP BY CustId
+		)
+		INSERT INTO #_ListPlayer(CustId)
+		SELECT TOP(@DataLimitValue) c.CustId	
+		FROM CTE_Cust c
+		ORDER BY
+			CASE WHEN @IsDataLimitDesc =1 THEN GroupAmount END DESC
+			,CASE WHEN @IsDataLimitDesc = 0 THEN GroupAmount END ASC
+			,c.CustId 	
+
+		IF EXISTS (
+			SELECT 1
+			FROM #_ListPlayer
+		)
+		BEGIN
+			DELETE n
+			FROM #__N88_SumWinloss n
+				LEFT JOIN #_ListPlayer l ON n.CustId = l.CustId
+			WHERE l.CustId IS NULL
+		END 
 	END
 
 	----cal closing balance
@@ -484,45 +526,6 @@ BEGIN
 			INNER JOIN #__TpExchange e ON rs.TpCurrencyId = e.TpExchangeId AND rs.exTime BETWEEN e.FromDate AND e.ToDate
 		GROUP BY cb.CustId
 	END
-	
-	--Get data limits player base on ticket data
-	BEGIN
-		CREATE TABLE #_ListPlayer (CustId INT)
-		IF (@DataLimitBy <> 0)
-		BEGIN
-			;WITH CTE_Cust AS (
-				SELECT CustId
-					,CASE @DataLimitBy WHEN 1 THEN SUM(BasedTurnOver)
-										WHEN 2 THEN SUM(BasedRevenue)
-										WHEN 3 THEN SUM(BetCount)
-										WHEN 4 THEN ISNULL(SUM(BasedNetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
-					END AS GroupAmount
-				FROM  #__N88_SumWinloss
-				WHERE IsTicketData = 1 -- just get only ticket data
-				GROUP BY CustId
-			)
-			INSERT INTO #_ListPlayer(CustId)
-			SELECT TOP(@DataLimitValue) c.CustId	
-			FROM CTE_Cust c
-			ORDER BY
-				CASE WHEN @IsDataLimitDesc =1 THEN GroupAmount END DESC
-				,CASE WHEN @IsDataLimitDesc = 0 THEN GroupAmount END ASC
-				,c.CustId 			
-		END
-
-		IF EXISTS (
-			SELECT 1
-			FROM #_ListPlayer
-		)
-		BEGIN
-			DELETE n
-			FROM #__N88_SumWinloss n
-				LEFT JOIN #_ListPlayer l ON n.CustId = l.CustId
-			WHERE n.IsTicketData = 1
-				AND l.CustId IS NULL
-		END 
-	END
-	DROP TABLE #__TpExchange
 
 	-- 2. Calc temp result
 	CREATE TABLE #__tmpResult 
@@ -1320,6 +1323,7 @@ BEGIN
 	DROP TABLE #__FinalResult
 	DROP TABLE #__N88_SumWinloss
 	DROP TABLE #__ClosingBalance
-	DROP TABLE #_ListPlayer
+	DROP TABLE #_ListPlayer		
+	DROP TABLE #__TpExchange
 END
 GO
