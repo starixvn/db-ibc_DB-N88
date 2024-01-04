@@ -39,6 +39,7 @@ AS
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
 		- 20231023@Sally: Separate USD (3) and USDKH (72)
+		- 20231201@Sally: Get only data players based on ticket data if having limits data [RedmineId: #197493]
 		
 	Param's Explanation:
 		@DataLimitBy:
@@ -99,6 +100,8 @@ BEGIN
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__TpExchange (TpExchangeId, FromDate)
 	
 	DECLARE @MinDate DATE, @MaxDate DATE, @TicketStatus VARCHAR(50) = '1,2' -- win, loss
+		,@ListCustFilter VARCHAR(MAX) = NULL
+		,@IsFilterCustId BIT = CASE WHEN ISNULL(@UserName, '') <> '' THEN 1 ELSE 0 END
 
 	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsNoDrawTicket = 0 THEN ',4' ELSE '' END -- draw ticket
 	SELECT @TicketStatus = @TicketStatus + CASE WHEN @IsIncludedFreeSpin = 1 THEN ',6' ELSE '' END -- free spin ticket
@@ -108,6 +111,20 @@ BEGIN
 		FROM STRING_SPLIT(@CurrencyIds, ',') t 
 			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
 	)
+
+	-- Get CustFilter Info
+	IF (@IsFilterCustId = 1)
+	BEGIN
+		SELECT @ListCustFilter = STRING_AGG(CONVERT(VARCHAR(50), c.CustId), ',') 
+		FROM dbo.Customer c WITH (NOLOCK)
+		WHERE c.MemberType <> 3 -- Exlude data of Live Streamer
+			AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
+			AND (@UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
+									WHEN @UserNameFilterId = 2 THEN c.TpUserName
+									WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
+							END
+			)			
+	END
 	
 	---- by winlostdate
 	IF (@FilterBy = 1)
@@ -150,21 +167,12 @@ BEGIN
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.SettledTime >= @FromDateTimeGMT0 AND r.SettledTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND c.MemberType <> 3
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), r.CustId) + ',%' OR @IsFilterCustId = 0)
 			GROUP BY
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime))
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
@@ -189,6 +197,7 @@ BEGIN
 				SELECT CustId, CurrencyId, DATEADD(HOUR, -12, settledDate) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
 				FROM dbo.TpReport9W WITH (NOLOCK)
 				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
+					AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), CustId) + ',%' OR @IsFilterCustId = 0)
 				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
 			) t
 				INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.TpExchangeId
@@ -249,21 +258,12 @@ BEGIN
 				,ProgressiveBet			= SUM(ISNULL(ProgressiveBet, 0))
 				,BetCount				= SUM(BetCount)
 			FROM dbo.N88_SumWinloss r WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON r.CustId = c.CustId
 			WHERE r.TransTime >= @FromDateTimeGMT0 AND r.TransTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
 				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.SiteId) + ',%'
 				AND ',' + @ProductIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.GameType) + ',%'
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.Currency) + ',%'
 				AND ',' + @TicketStatus + ',' LIKE '%,' + CONVERT(VARCHAR(15), r.StatusId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND c.MemberType <> 3
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), r.CustId) + ',%' OR @IsFilterCustId = 0)
 			GROUP BY
 				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime))
 				,CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
@@ -273,6 +273,80 @@ BEGIN
 		) r
 			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.TpCurrencyId = e.TpExchangeId
 		GROUP BY rptDate, GameType, CustId, r.TpCurrencyId
+	END
+
+	-- Reset Exchange
+	DELETE #__TpExchange
+	INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
+	SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
+	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
+		LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
+	WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
+	
+	-- Deposit/Withdrawal
+	BEGIN 
+		-- Deposit
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfDeposit, DepositAmount, IsDepositWithrawUser)
+		SELECT d.rptDate, d.CustId, d.CurrencyId, 
+			SUM(d.BetCount) AS NumberOfDeposit, 
+			SUM(d.Amount * e.Rate / e.MultipleBy) AS DepositAmount,
+			1 AS IsDepositWithrawUser
+		FROM 
+		(
+			SELECT 
+				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, d.CustId, d.CurrencyId, 
+				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
+				COUNT(1) AS BetCount,
+				SUM(d.ActualDeposit) AS Amount
+			FROM dbo.DepositInfo d WITH (NOLOCK)
+			WHERE d.WinlostDate BETWEEN @FDate AND @TDate
+				AND d.CreateTime >= @FromDateTimeGMT0 
+				AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.SiteId) + ',%'
+				AND d.Status = 3
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), d.CustId) + ',%' OR @IsFilterCustId = 0)
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), d.CustId, d.CurrencyId
+				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
+		) d
+			INNER JOIN #__TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY d.rptDate, d.CustId, d.CurrencyId
+		
+		-- Withdrawal
+		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
+		SELECT w.rptDate, w.CustId, w.CurrencyId, 
+			SUM(w.BetCount) AS NumberOfWithdrawal, 
+			SUM(w.Amount * e.Rate / e.MultipleBy) AS WithdrawalAmount,
+			1 AS IsDepositWithrawUser
+		FROM 
+		(
+			SELECT 
+				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS rptDate, w.CustId, w.CurrencyId, 
+				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate,
+				COUNT(1) AS BetCount,
+				SUM(w.Amount) AS Amount
+			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
+			WHERE w.WinlostDate BETWEEN @FDate AND @TDate
+				AND w.CreateTime >= @FromDateTimeGMT0 
+				AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
+				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.SiteId) + ',%'
+				AND w.Status = 6
+				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
+				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), w.CustId) + ',%' OR @IsFilterCustId = 0)
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), w.CustId, w.CurrencyId
+				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
+		) w
+			INNER JOIN #__TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
+		GROUP BY w.rptDate, w.CustId, w.CurrencyId
+	END
+	
+	--- Exlude data of Live Streamer and filter IsIncludeTestData
+	BEGIN
+		DELETE s
+		FROM #__N88_SumWinloss s
+			INNER JOIN dbo.Customer c WITH (NOLOCK) ON s.CustId = c.CustId 
+		WHERE c.MemberType = 3 --- Exlude data of Live Streamer
+			OR (c.IsTest = 1 AND @IsIncludedTestData = 0)
 	END
 
 	--Get data limits by player
@@ -309,89 +383,6 @@ BEGIN
 				LEFT JOIN #_ListPlayer l ON n.CustId = l.CustId
 			WHERE l.CustId IS NULL
 		END 
-	END
-
-	-- Reset Exchange
-	DELETE #__TpExchange
-	INSERT INTO #__TpExchange (FromDate, ToDate, TpExchangeId, Rate, MultipleBy)
-	SELECT FromDate, ToDate, ISNULL(tp.TpExchangeID, e.ExchangeId), CASE WHEN @IsDetailInOriginalCurr = 0 THEN Rate ELSE 1 END, CASE WHEN e.ExchangeId IN (15, 51) THEN 1000.0 ELSE 1.0 END
-	FROM bodb02.dbo.Lrf_f_GetExchangeRate(@FDate, @TDate, @DisplayCurrency, '') e
-		LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = e.ExchangeId
-	WHERE ',' + @CurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), e.ExchangeId) + ',%'
-	
-	-- Deposit/Withdrawal
-	BEGIN 
-		-- Deposit
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfDeposit, DepositAmount, IsDepositWithrawUser)
-		SELECT d.rptDate, d.CustId, d.CurrencyId, 
-			SUM(d.BetCount) AS NumberOfDeposit, 
-			SUM(d.Amount * e.Rate / e.MultipleBy) AS DepositAmount,
-			1 AS IsDepositWithrawUser
-		FROM 
-		(
-			SELECT 
-				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
-				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
-				COUNT(1) AS BetCount,
-				SUM(d.ActualDeposit) AS Amount
-			FROM dbo.DepositInfo d WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON d.CustId = c.CustId
-			WHERE d.WinlostDate BETWEEN @FDate AND @TDate
-				AND d.CreateTime >= @FromDateTimeGMT0 
-				AND d.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.SiteId) + ',%'
-				AND d.Status = 3
-				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND c.MemberType <> 3
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), c.CustId, c.CurrencyId
-				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
-		) d
-			INNER JOIN #__TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY d.rptDate, d.CustId, d.CurrencyId
-		
-		-- Withdrawal
-		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
-		SELECT w.rptDate, w.CustId, w.CurrencyId, 
-			SUM(w.BetCount) AS NumberOfWithdrawal, 
-			SUM(w.Amount * e.Rate / e.MultipleBy) AS WithdrawalAmount,
-			1 AS IsDepositWithrawUser
-		FROM 
-		(
-			SELECT 
-				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS rptDate, c.CustId, c.CurrencyId, 
-				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate,
-				COUNT(1) AS BetCount,
-				SUM(w.Amount) AS Amount
-			FROM dbo.WithdrawalInfo w WITH (NOLOCK)
-				INNER JOIN dbo.Customer c WITH (NOLOCK) ON w.CustId = c.CustId
-			WHERE w.WinlostDate BETWEEN @FDate AND @TDate
-				AND w.CreateTime >= @FromDateTimeGMT0 
-				AND w.CreateTime < DATEADD(DAY, 1, @ToDateTimeGMT0)
-				AND ',' + @SiteIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.SiteId) + ',%'
-				AND w.Status = 6
-				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
-				AND (c.IsTest = 0 OR @IsIncludedTestData = 1)
-				AND c.MemberType <> 3
-				AND (
-					ISNULL(@UserName,'') = ''
-					OR @UserName = CASE WHEN @UserNameFilterId = 1 THEN c.UserName
-										WHEN @UserNameFilterId = 2 THEN c.TpUserName
-										WHEN @UserNameFilterId = 3 THEN c.TpSystemUserName
-									END
-				)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), c.CustId, c.CurrencyId
-				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
-		) w
-			INNER JOIN #__TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY w.rptDate, w.CustId, w.CurrencyId
 	END
 
 	;WITH CTE_Result AS (
