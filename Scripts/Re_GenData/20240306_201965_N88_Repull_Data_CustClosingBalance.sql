@@ -1,0 +1,17 @@
+/*<info serverAlias="DBN88-bodb_N88" isFunction="0" isNested=""></info>*/
+/*	
+	Created: 20240305@Sally
+	Task: Repull data from 03.03.2024
+	DB: DBN88/bodb_N88
+	- Repull data B2C CustClosingBalance
+*/
+
+/*Run ON DB052, DB053*/
+USE bodb_N88
+GO
+
+INSERT INTO dbo.API_TimeTracker (DataSource, CalledTime, KeyValue)
+SELECT t.DataSource, '2024-03-05' AS CalledTime, t.KeyValue
+FROM(
+	SELECT 'CustClosingBalance' as DataSource, '2023-03-02T00:00:00.000' as KeyValue
+)t
