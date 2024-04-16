@@ -21,6 +21,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_Winloss_Detail]
 	,@DataLimitBy				INT= 0
 	,@IsDataLimitDesc			INT = 0
 	,@DataLimitValue			INT = 0
+	,@ReportSettingTypeId		INT = 0
 AS
 
 /*
@@ -40,6 +41,7 @@ AS
 		- 20230710@Sally: Data Limits by top/bottom X player [RedmineId: #189299]
 		- 20231023@Sally: Separate USD (3) and USDKH (72)
 		- 20231201@Sally: Get only data players based on ticket data if having limits data [RedmineId: #197493]
+		- 20240401@Sally: Support House Win Loss [RedmineID: #201107]
 		
 	Param's Explanation:
 		@DataLimitBy:
@@ -52,6 +54,11 @@ AS
 			.  0 =  Top
 			.  1 =  Bottom
 		@DataLimitValue: Top/bottom X player
+		@ReportSettingTypeId: SettingTypeId
+			. 0 = No filter by ReportSetting
+			. 1 = DataView Full (Default)
+			. 2 = DataView House
+			. 3 = Dataview ShareHolder
 */
 
 BEGIN
@@ -59,6 +66,20 @@ BEGIN
 
 	DECLARE @FDate DATE, @TDate DATE, @TpCurrencyIds VARCHAR(MAX)
 	SELECT  @FDate = DATEADD(DAY, -1, @FromDate), @TDate = DATEADD(DAY, 1, @ToDate)
+
+	CREATE TABLE #__ReportSetting(
+		[SiteId] INT NOT NULL,
+		[CurrencyId] INT NULL,
+		[PercentageValue] DECIMAL(9,8) NOT NULL,
+		[FromDate] DATETIME NOT NULL,
+		[ToDate] DATETIME NOT NULL
+	) 
+	CREATE CLUSTERED INDEX [CIX_ReportSetting_ReportSettingType] ON #__ReportSetting
+	(
+		[SiteId] ASC,
+		[CurrencyId] ASC,
+		[FromDate] ASC
+	)
 
 	-- Data on GMT+0 --> convert timezone
 	DECLARE @FromDateTimeGMT0 DATETIME, @ToDateTimeGMT0 DATETIME
@@ -70,6 +91,8 @@ BEGIN
 	FROM dbo.ServerInfo s WITH (NOLOCK)
 		INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
 	WHERE ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.LicenseeId) + ',%'
+
+	
 
 	-- 1. Get raw data
 	CREATE TABLE #__N88_SumWinloss
@@ -92,6 +115,9 @@ BEGIN
 		,DepositAmount				MONEY
 		,NumberOfWithdrawal			INT
 		,WithdrawalAmount			MONEY
+		,TurnOverSort			MONEY 
+		,RevenueSort			MONEY 
+		,NetTurnOverSort		MONEY 
 		,IsDepositWithrawUser		BIT DEFAULT (0)
 	)
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (CustId)
@@ -111,6 +137,53 @@ BEGIN
 		FROM STRING_SPLIT(@CurrencyIds, ',') t 
 			LEFT JOIN dbo.TpExchange tp WITH(NOLOCK) ON tp.ExchangeId = t.value
 	)
+
+	-- Get Report Setting filter
+	IF(@ReportSettingTypeId <> 0)
+	BEGIN
+		;WITH CTE_ReportSetting AS (
+			SELECT CONVERT(DATE, DATEADD(HOUR, -4, FromDate)) AS FromDate
+				,CONVERT(DATE, DATEADD(HOUR, -4, ToDate)) AS ToDate
+				,SiteId
+				,CurrencyType
+				,CurrencyId
+				,PercentageValue
+			FROM dbo.N88_f_GetReportSetting(@ReportSettingTypeId, @SiteIds) nfgrs
+			WHERE nfgrs.FromDate <= @FromDateTimeGMT0
+				AND nfgrs.ToDate >= @ToDateTimeGMT0
+		),
+		CTE_ReportSetting_ID AS(
+		SELECT FromDate
+			,ToDate
+			,SiteId
+			,CurrencyId
+			,PercentageValue
+		FROM CTE_ReportSetting
+		WHERE CurrencyType = 'ID'
+		)
+		INSERT INTO #__ReportSetting (FromDate, ToDate, SiteId, CurrencyId, PercentageValue)
+			SELECT  FromDate
+				,ToDate
+				,CurrencyId
+				,Percentagevalue
+				,SiteId
+			FROM CTE_ReportSetting_ID
+			UNION ALL
+			SELECT t.FromDate
+				,t.ToDate
+				,h.CurrencyId
+				,t.Percentagevalue
+				,t.SiteId
+			FROM CTE_ReportSetting t
+				CROSS JOIN(
+						SELECT CONVERT(INT, t.value) AS CurrencyId
+						FROM  STRING_SPLIT(@TpCurrencyIds, ',') t  
+					)h
+				LEFT JOIN CTE_ReportSetting_ID a ON a.CurrencyId = h.CurrencyId AND t.SiteId = a.SiteId
+												AND a.FromDate = t.FromDate AND a.ToDate = t.ToDate
+			WHERE CurrencyType = 'OTHER'
+				AND a.CurrencyId IS NULL
+	END
 
 	-- Get CustFilter Info
 	IF (@IsFilterCustId = 1)
@@ -139,20 +212,25 @@ BEGIN
 		(
 			rptDate, GameType, CustId, TpCurrencyId
 			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
+			,TurnOverSort, RevenueSort, NetTurnOverSort
 		)
 		SELECT rptDate, GameType, CustId, r.TpCurrencyId
 			,SUM(BetCount)
+			,SUM(TurnOver * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(NetTurnOver * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(NetTurnOverForMargin * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(Revenue * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(RevenueForMargin * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(Winloss * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(ProgressiveWin * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(ProgressiveBet * e.Rate * ISNULL(rs.PercentageValue, 1))
 			,SUM(TurnOver * e.Rate)
-			,SUM(NetTurnOver * e.Rate)
-			,SUM(NetTurnOverForMargin * e.Rate)
 			,SUM(Revenue * e.Rate)
-			,SUM(RevenueForMargin * e.Rate)
-			,SUM(Winloss * e.Rate)
-			,SUM(ProgressiveWin * e.Rate)
-			,SUM(ProgressiveBet * e.Rate)
+			,SUM(NetTurnOver * e.Rate)	
 		FROM (
 			SELECT
-				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
+				r.SiteId
+				,CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
 				,rptDate				= CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,r.CustId
 				,r.Currency AS TpCurrencyId
@@ -179,8 +257,13 @@ BEGIN
 				,r.CustId
 				,r.Currency
 				,r.GameType
+				,r.SiteId
 		) r
 			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.TpCurrencyId = e.TpExchangeId
+			LEFT JOIN #__ReportSetting rs ON r.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
+										AND r.TpCurrencyId = rs.CurrencyId 
+										AND r.SiteId = rs.SiteId
+			WHERE rs.CurrencyId IS NOT NULL OR @ReportSettingTypeId = 0
 		GROUP BY rptDate, GameType, CustId, r.TpCurrencyId
 
 		-- Get commission for 9W (filter by winlostdate only)
@@ -192,15 +275,19 @@ BEGIN
 			
 			CREATE TABLE #__9W (CustId INT, rptDate DATE, Commission MONEY, BasedCommission MONEY)
 			INSERT INTO #__9W (CustId, rptDate, Commission, BasedCommission)
-			SELECT t.CustId, t.rptDate, SUM(t.Commission / e.MultipleBy), SUM(t.Commission * e.Rate / e.MultipleBy)
+			SELECT t.CustId, t.rptDate, SUM(t.Commission * ISNULL(rs.PercentageValue, 1)/ e.MultipleBy), SUM(t.Commission * e.Rate * ISNULL(rs.PercentageValue, 1)/ e.MultipleBy)
 			FROM (
-				SELECT CustId, CurrencyId, DATEADD(HOUR, -12, settledDate) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
+				SELECT SiteId, CustId, CurrencyId, CONVERT(DATE,DATEADD(HOUR, -12, settledDate)) AS ExchangeDate, CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate)) AS rptDate, SUM(Commission) AS Commission
 				FROM dbo.TpReport9W WITH (NOLOCK)
 				WHERE settledDate >= @FromDateTimeGMT8 AND settledDate < DATEADD(DAY, 1, @ToDateTimeGMT8)
 					AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), CustId) + ',%' OR @IsFilterCustId = 0)
-				GROUP BY CustId, CurrencyId, DATEADD(HOUR, -12, settledDate), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
+				GROUP BY SiteId, CustId, CurrencyId, CONVERT(DATE,DATEADD(HOUR, -12, settledDate)), CONVERT(DATE, DATEADD(HOUR, @TimeZone - 8, settledDate))
 			) t
 				INNER JOIN #__TpExchange e ON t.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND t.CurrencyId = e.TpExchangeId
+				LEFT JOIN #__ReportSetting rs ON t.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
+											AND t.CurrencyId = rs.CurrencyId
+											AND t.SiteId = rs.SiteId
+			WHERE rs.CurrencyId IS NOT NULL OR @ReportSettingTypeId = 0
 			GROUP BY t.CustId, t.rptDate
 
 			UPDATE t
@@ -230,20 +317,24 @@ BEGIN
 		(
 			rptDate, GameType, CustId, TpCurrencyId
 			,BetCount, TurnOver, NetTurnOver, NetTurnOverForMargin, Revenue, RevenueForMargin, Winloss, ProgressiveWin, ProgressiveBet
+			,TurnOverSort, RevenueSort, NetTurnOverSort
 		)
 		SELECT rptDate, GameType, CustId, r.TpCurrencyId
 			,SUM(BetCount)
+			,SUM(TurnOver * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(NetTurnOver * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(NetTurnOverForMargin * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(Revenue * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(RevenueForMargin * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(Winloss * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(ProgressiveWin * e.Rate * ISNULL(rs.PercentageValue, 1))
+			,SUM(ProgressiveBet * e.Rate * ISNULL(rs.PercentageValue, 1))
 			,SUM(TurnOver * e.Rate)
-			,SUM(NetTurnOver * e.Rate)
-			,SUM(NetTurnOverForMargin * e.Rate)
 			,SUM(Revenue * e.Rate)
-			,SUM(RevenueForMargin * e.Rate)
-			,SUM(Winloss * e.Rate)
-			,SUM(ProgressiveWin * e.Rate)
-			,SUM(ProgressiveBet * e.Rate)
+			,SUM(NetTurnOver * e.Rate)	
 		FROM (
-			SELECT
-				CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
+			SELECT r.SiteId
+				,CONVERT(DATE, DATEADD(HOUR, -4, r.SettledTime)) AS ExchangeDate
 				,rptDate				= CONVERT(DATE, DATEADD(HOUR, @TimeZone, CASE @FilterBy WHEN 1 THEN r.SettledTime WHEN 2 THEN r.TransTime END))
 				,r.CustId
 				,r.Currency AS TpCurrencyId
@@ -270,8 +361,12 @@ BEGIN
 				,r.CustId
 				,r.Currency
 				,r.GameType
+				,r.SiteId
 		) r
 			INNER JOIN #__TpExchange e ON r.ExchangeDate BETWEEN e.FromDate AND e.ToDate AND r.TpCurrencyId = e.TpExchangeId
+			LEFT JOIN #__ReportSetting rs ON r.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
+											AND r.TpCurrencyId = rs.CurrencyId
+											AND r.SiteId = rs.SiteId
 		GROUP BY rptDate, GameType, CustId, r.TpCurrencyId
 	END
 
@@ -289,12 +384,12 @@ BEGIN
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfDeposit, DepositAmount, IsDepositWithrawUser)
 		SELECT d.rptDate, d.CustId, d.CurrencyId, 
 			SUM(d.BetCount) AS NumberOfDeposit, 
-			SUM(d.Amount * e.Rate / e.MultipleBy) AS DepositAmount,
+			SUM(d.Amount * e.Rate * ISNULL(rs.PercentageValue, 1) / e.MultipleBy) AS DepositAmount,
 			1 AS IsDepositWithrawUser
 		FROM 
 		(
 			SELECT 
-				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, d.CustId, d.CurrencyId, 
+				CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)) AS rptDate, d.CustId, d.CurrencyId, d.SiteId, 
 				CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime)) AS ExchangeDate,
 				COUNT(1) AS BetCount,
 				SUM(d.ActualDeposit) AS Amount
@@ -310,18 +405,21 @@ BEGIN
 				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
 		) d
 			INNER JOIN #__TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY d.rptDate, d.CustId, d.CurrencyId
+			LEFT JOIN #__ReportSetting rs ON d.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
+											AND d.CurrencyId = rs.CurrencyId
+											AND d.SiteId = rs.SiteId
+		GROUP BY d.rptDate, d.CustId, d.CurrencyId, d.SiteId
 		
 		-- Withdrawal
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
 		SELECT w.rptDate, w.CustId, w.CurrencyId, 
 			SUM(w.BetCount) AS NumberOfWithdrawal, 
-			SUM(w.Amount * e.Rate / e.MultipleBy) AS WithdrawalAmount,
+			SUM(w.Amount * e.Rate * ISNULL(rs.PercentageValue, 1) / e.MultipleBy) AS WithdrawalAmount,
 			1 AS IsDepositWithrawUser
 		FROM 
 		(
 			SELECT 
-				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS rptDate, w.CustId, w.CurrencyId, 
+				CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)) AS rptDate, w.CustId, w.CurrencyId, w.SiteId,
 				CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime)) AS ExchangeDate,
 				COUNT(1) AS BetCount,
 				SUM(w.Amount) AS Amount
@@ -337,7 +435,10 @@ BEGIN
 				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
 		) w
 			INNER JOIN #__TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
-		GROUP BY w.rptDate, w.CustId, w.CurrencyId
+			LEFT JOIN #__ReportSetting rs ON w.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
+											AND w.CurrencyId = rs.CurrencyId
+											AND w.SiteId = rs.SiteId
+		GROUP BY w.rptDate, w.CustId, w.CurrencyId, w.SiteId
 	END
 	
 	--- Exlude data of Live Streamer and filter IsIncludeTestData
@@ -356,10 +457,10 @@ BEGIN
 		BEGIN
 			;WITH CTE_Cust AS (
 				SELECT CustId
-					,CASE @DataLimitBy WHEN 1 THEN SUM(TurnOver)
-										WHEN 2 THEN SUM(Revenue)
+					,CASE @DataLimitBy WHEN 1 THEN SUM(TurnOverSort)
+										WHEN 2 THEN SUM(RevenueSort)
 										WHEN 3 THEN SUM(BetCount)
-										WHEN 4 THEN ISNULL(SUM(NetTurnOver)/SUM(NULLIF(BetCount,0)), 0)
+										WHEN 4 THEN ISNULL(SUM(NetTurnOverSort)/SUM(NULLIF(BetCount,0)), 0)
 					END AS GroupAmount
 				FROM  #__N88_SumWinloss
 				GROUP BY CustId
@@ -452,5 +553,6 @@ BEGIN
 
 	DROP TABLE #__TpExchange
 	DROP TABLE #__N88_SumWinloss
+	DROP TABLE #__ReportSetting
 END
 GO
