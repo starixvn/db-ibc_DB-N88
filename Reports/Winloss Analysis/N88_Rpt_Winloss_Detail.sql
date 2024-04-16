@@ -161,7 +161,7 @@ BEGIN
 		FROM CTE_ReportSetting
 		WHERE CurrencyType = 'ID'
 		)
-		INSERT INTO #__ReportSetting (FromDate, ToDate, SiteId, CurrencyId, PercentageValue)
+		INSERT INTO #__ReportSetting (FromDate, ToDate, CurrencyId, PercentageValue, SiteId)
 			SELECT  FromDate
 				,ToDate
 				,CurrencyId
@@ -401,14 +401,14 @@ BEGIN
 				AND d.Status = 3
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), d.CurrencyId) + ',%'
 				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), d.CustId) + ',%' OR @IsFilterCustId = 0)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), d.CustId, d.CurrencyId
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, d.CreateTime)), d.CustId, d.CurrencyId, d.SiteId
 				, CONVERT(DATE, DATEADD(HOUR, -4, d.CreateTime))
 		) d
 			INNER JOIN #__TpExchange e ON d.CurrencyId = e.TpExchangeId AND d.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			LEFT JOIN #__ReportSetting rs ON d.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
 											AND d.CurrencyId = rs.CurrencyId
 											AND d.SiteId = rs.SiteId
-		GROUP BY d.rptDate, d.CustId, d.CurrencyId, d.SiteId
+		GROUP BY d.rptDate, d.CustId, d.CurrencyId
 		
 		-- Withdrawal
 		INSERT INTO #__N88_SumWinloss (rptDate, CustId, TpCurrencyId, NumberOfWithdrawal, WithdrawalAmount, IsDepositWithrawUser)
@@ -431,14 +431,14 @@ BEGIN
 				AND w.Status = 6
 				AND ',' + @TpCurrencyIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), w.CurrencyId) + ',%'
 				AND (',' + @ListCustFilter + ',' LIKE '%,' + CONVERT(VARCHAR(50), w.CustId) + ',%' OR @IsFilterCustId = 0)
-			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), w.CustId, w.CurrencyId
+			GROUP BY CONVERT(DATE, DATEADD(HOUR, @TimeZone, w.CreateTime)), w.CustId, w.CurrencyId, w.SiteId
 				, CONVERT(DATE, DATEADD(HOUR, -4, w.CreateTime))
 		) w
 			INNER JOIN #__TpExchange e ON w.CurrencyId = e.TpExchangeId AND w.ExchangeDate BETWEEN e.FromDate AND e.ToDate
 			LEFT JOIN #__ReportSetting rs ON w.ExchangeDate BETWEEN rs.FromDate AND rs.ToDate 
 											AND w.CurrencyId = rs.CurrencyId
 											AND w.SiteId = rs.SiteId
-		GROUP BY w.rptDate, w.CustId, w.CurrencyId, w.SiteId
+		GROUP BY w.rptDate, w.CustId, w.CurrencyId
 	END
 	
 	--- Exlude data of Live Streamer and filter IsIncludeTestData

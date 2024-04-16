@@ -245,7 +245,7 @@ BEGIN
 		FROM CTE_ReportSetting
 		WHERE CurrencyType = 'ID'
 		)
-		INSERT INTO #__ReportSetting (FromDate, ToDate, SiteId, CurrencyId, PercentageValue)
+		INSERT INTO #__ReportSetting (FromDate, ToDate, CurrencyId, PercentageValue, SiteId)
 			SELECT  FromDate
 				,ToDate
 				,CurrencyId
