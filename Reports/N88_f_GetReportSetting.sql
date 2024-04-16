@@ -1,4 +1,4 @@
-/*<info serverAlias="DBN88-bodb_N88" executers="wsv_lap" isFunction="1" isNested="1"></info>*/
+/*<info serverAlias="DBN88-bodb_N88" selecter="wsv_lap" isFunction="1" isNested="1"></info>*/
 USE bodb_N88
 GO
 
