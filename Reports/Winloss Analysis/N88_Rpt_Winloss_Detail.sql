@@ -92,8 +92,6 @@ BEGIN
 		INNER JOIN bodb_Licensee.dbo.Licensees l WITH (NOLOCK) ON s.LicenseeName = l.LicenseeName
 	WHERE ',' + @LicenseeIds + ',' LIKE '%,' + CONVERT(VARCHAR(15), l.LicenseeId) + ',%'
 
-	
-
 	-- 1. Get raw data
 	CREATE TABLE #__N88_SumWinloss
 	(
@@ -149,8 +147,8 @@ BEGIN
 				,CurrencyId
 				,PercentageValue
 			FROM dbo.N88_f_GetReportSetting(@ReportSettingTypeId, @SiteIds) nfgrs
-			WHERE nfgrs.FromDate <= @FromDateTimeGMT0
-				AND nfgrs.ToDate >= @ToDateTimeGMT0
+			WHERE (@FromDateTimeGMT0 BETWEEN FromDate AND ToDate)
+				OR (@ToDateTimeGMT0  BETWEEN FromDate AND ToDate)
 		),
 		CTE_ReportSetting_ID AS(
 		SELECT FromDate
