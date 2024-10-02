@@ -67,5 +67,4 @@ RETURN
 	UNION ALL SELECT 3, 4, 'APP', 'app.bwing.com'
 	UNION ALL SELECT 3, 5, 'Landing Pages', NULL
 	UNION ALL SELECT 3, 6, 'None', NULL
-	-- test FN 02
 GO
