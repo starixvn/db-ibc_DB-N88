@@ -48,7 +48,7 @@ BEGIN
 			WHEN 97 THEN 'BDT'
 			ELSE ex.Code
 		END
-
+	-- Test FN
 END
 
 GO
