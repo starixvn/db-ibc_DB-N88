@@ -42,6 +42,7 @@ AS
 		- 20231023@Sally: Separate USD (3) and USDKH (72)
 		- 20231201@Sally: Get only data players based on ticket data if having limits data [RedmineId: #197493]
 		- 20240401@Sally: Support House Win Loss [RedmineID: #201107]
+		- 20241128@Sally: Fix get commission for 9W [RedmineID: #214359]
 		
 	Param's Explanation:
 		@DataLimitBy:
@@ -289,7 +290,7 @@ BEGIN
 			GROUP BY t.CustId, t.rptDate
 
 			UPDATE t
-			SET t.Commission = -w.Commission, t.Revenue = t.Revenue - w.Commission, t.RevenueForMargin = t.RevenueForMargin - w.Commission
+			SET t.Commission = -w.BasedCommission, t.Revenue = t.Revenue - w.BasedCommission, t.RevenueForMargin = t.RevenueForMargin - w.BasedCommission
 			FROM #__N88_SumWinloss t
 				INNER JOIN #__9W w ON t.CustId = w.CustId AND t.rptDate = w.rptDate
 			WHERE t.GameType = 51
