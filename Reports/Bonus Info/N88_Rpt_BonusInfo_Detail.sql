@@ -1,4 +1,4 @@
-/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+/*<info serverAlias="DBN88-bodb_N88" executers="wsv_lap" isFunction="0" isNested="0"></info>*/
 USE bodb_N88
 GO
 
@@ -19,7 +19,7 @@ ALTER PROCEDURE [dbo].[N88_Rpt_BonusInfo_Detail]
 	,@NRows				INT = 0 OUTPUT
 AS
 
-/*
+/*n
 	Created: 20200105@Percy
 	DB: DBN88-bodb_N88
 	Task: MPA - Marketing Report - Bonus Info
@@ -40,6 +40,7 @@ AS
 		- 20230704@Sally: Exclude data of Live Streamer [RedmineId: #189299]
 		- 20231018@Sally: Missing data of currency USD (3) on details [RedmineId: #195591]
 		- 20231020@Sally: Permission to hide sensitive information [RedmineId: #195057]
+		- 20250228@Sally: Increase the length of BonusName [RedmineId: #218851]
 
 	Param's Explanation:
 		@SortbyId:
@@ -72,7 +73,7 @@ BEGIN
 	CREATE TABLE #TPExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MulipleBy FLOAT)
 
 	CREATE TABLE #BonusInfo (
-		CustId INT, CurrencyId INT, BonusCode VARCHAR(50), BonusName VARCHAR(50),BonusTypeId SMALLINT, BonusTypeName VARCHAR(50) ,Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, DataSource VARCHAR(128), 
+		CustId INT, CurrencyId INT, BonusCode VARCHAR(50), BonusName VARCHAR(300),BonusTypeId SMALLINT, BonusTypeName VARCHAR(50) ,Status TINYINT, ExchangeDate DATE, ClaimedDate DATETIME, DataSource VARCHAR(128), 
 		TransactionType INT, Amount MONEY, PercentagedCompletion FLOAT DEFAULT (1)
 	)
 	CREATE TABLE #DepositInfo (CustId INT, CurrencyId INT, ExchangeDate DATE, Amount MONEY)
