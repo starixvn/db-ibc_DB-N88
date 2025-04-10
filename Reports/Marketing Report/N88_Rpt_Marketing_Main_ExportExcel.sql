@@ -1,4 +1,4 @@
-﻿/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+﻿/*<info serverAlias="DBN88-bodb_N88" executers="wsv_lap" isFunction="0" isNested="0"></info>*/
 USE bodb_N88
 GO
 
