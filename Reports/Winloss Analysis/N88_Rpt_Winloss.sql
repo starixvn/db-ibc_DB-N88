@@ -65,6 +65,7 @@ AS
 		- 20231023@Sally: Separate USD (3) and USDKH (72)
 		- 20231201@Sally: Get only data players based on ticket data if having limits data [RedmineId: #197493]
 		- 20240401@Sally: Support House Win Loss [RedmineID: #201107]
+		- 20250408@Kelvin: Upgrade ExchangeId Datatype [RedmineID: #222339]
 
 	Param's Explanation:
 		@GroupBy:
@@ -173,7 +174,7 @@ BEGIN
 	)
 	CREATE CLUSTERED INDEX CIX_N88_SumWinloss ON #__N88_SumWinloss (CustId)
 
-	CREATE TABLE #__TpExchange (FromDate DATE, ToDate DATE, TpExchangeId TINYINT, Rate FLOAT, MultipleBy FLOAT)
+	CREATE TABLE #__TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
 	CREATE CLUSTERED INDEX CIX_Exchange ON #__TpExchange (TpExchangeId, FromDate)
 
 	--closing balance temp table
