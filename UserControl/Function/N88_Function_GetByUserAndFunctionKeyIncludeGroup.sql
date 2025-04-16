@@ -1,4 +1,4 @@
-﻿/*<info serverAlias="DBN88POL-N88_UserControl" executers="bodbAdminNet,bodbLicenseeNet" viewers="" isFunction="0" isNested="0"></info>*/
+﻿/*<info serverAlias="DBN88POL-N88_UserControl" executers="wsv_nap" viewers="" isFunction="0" isNested="0"></info>*/
 
 ALTER PROCEDURE [dbo].[N88_Function_GetByUserAndFunctionKeyIncludeGroup]
 	@UserId			INT,
@@ -13,6 +13,7 @@ AS
 
 	Revisions:
 		- 20200314@Kos: Created [RedmineID: #129873]
+		- 20250204@Hogan: Get ParentKey [RedmineID: #211934]
 */
 
 BEGIN
@@ -29,6 +30,7 @@ BEGIN
 		f.IsActive,
 		f.Environment,
 		f.ParentId,			-- parent information
+		pf.FunctionKey AS ParentKey,
 		f.ParentName,
 		f.SiteId,			-- site information
 		s.SiteName
@@ -72,6 +74,7 @@ BEGIN
 			ON A.FunctionID = B.FunctionID
 		) AS uf
 		LEFT JOIN dbo.N88_Functions AS f WITH (NOLOCK) ON uf.FunctionId = f.FunctionId
+		LEFT JOIN dbo.N88_Functions AS pf WITH (NOLOCK) ON f.ParentId IS NOT NULL AND f.ParentId <> 0 AND f.ParentId = pf.FunctionId
 		LEFT JOIN dbo.N88_Sites AS s WITH (NOLOCK) ON f.SiteId = s.SiteId
 	WHERE
 		(@Environment = 'UAT' OR (@Environment != 'UAT' AND f.Environment = @Environment))
