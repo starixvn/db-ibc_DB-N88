@@ -1,4 +1,4 @@
-﻿/*<info serverAlias="DBN88-bodb_N88" executers="bodbLicenseeNet" isFunction="0" isNested="0"></info>*/
+﻿/*<info serverAlias="DBN88-bodb_N88" executers="wsv_lap" isFunction="0" isNested="0"></info>*/
 USE bodb_N88
 GO
 
@@ -39,7 +39,7 @@ AS
 		- 20221017@Malcolm: Support BDT currency [RedmineId: #178713]
 		- 20230406@Malcolm: Using Actual Deposit instead of Amount for Deposit Info [RedmineId: #186439]
 		- 20230705@Sally: Exclude data of Live Streamer [RedmineId: #189299]
-
+		- 20250408@Kelvin: Upgrade ExchangeId Datatype [RedmineID: #222339]
 */
 
 BEGIN
@@ -163,7 +163,7 @@ BEGIN
 			AND c.MemberType <> 3 -- Exclude Live Streamer
 
 		-- Exchange
-		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId TINYINT, Rate FLOAT, MultipleBy FLOAT)
+		CREATE TABLE #TpExchange (FromDate DATE, ToDate DATE, TpExchangeId INT, Rate FLOAT, MultipleBy FLOAT)
 
 		-- Deposit/Withdrawal
 		CREATE TABLE #DepositUsers (CustId INT, Deposit MONEY, FirstDeposit MONEY, IsMTD TINYINT, PRIMARY KEY (CustId, IsMTD))
