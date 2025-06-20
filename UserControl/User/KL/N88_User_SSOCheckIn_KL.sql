@@ -36,7 +36,7 @@ BEGIN
 		--INSERT INTO dbo.N88_OnUser(UserId, SiteId, IsKickedOut, IP, NetSessionId)
 		--VALUES (@UserId, @SiteId, 0, @IP, @NetSessionID)
 		
-		SET @OnUserId = SCOPE_IDENTITY()
+		SET @OnUserId = 1--SCOPE_IDENTITY()
 
 		-- Update last login date
 		--IF @SiteId = 0	-- N88 Hub
